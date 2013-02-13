@@ -1,0 +1,18 @@
+icecast:
+    port: 1130
+    host: localhost
+    mount: /gopher.mp3
+    passwd: example
+    format: MP3
+    protocol: HTTP
+    name: Test Proxy Stream
+    description: Testing things!
+database:
+    username: tester
+    password: mypassword
+    protocol: tcp
+    host: localhost
+    port: 3777
+    dbname: testdb
+    parameters:
+        charset: utf8
