@@ -7,9 +7,11 @@ import (
 
 var Config *yaml.File
 var configFile string
+var Authentication bool = true
 
 func init() {
     flag.StringVar(&configFile, "c", "proxy.yaml", "Configuration file path.")
+    flag.BoolVar(&Authentication, "auth", true, "False if authentication should be disabled")
     flag.Parse()
     Config = yaml.ConfigFile(configFile)
 }
