@@ -1,6 +1,7 @@
 package server
 
 import (
+    "github.com/Wessie/icecast-proxy-go/config"
     "strings"
     "encoding/base64"
     "net/http"
@@ -12,6 +13,7 @@ import (
     "github.com/jameskeane/bcrypt"
     "database/sql"
     _ "github.com/Go-SQL-Driver/MySQL"
+
 )
 
 var database *sql.DB
@@ -24,13 +26,15 @@ this very quickly
 */
 func init() {
     var err error
-    database, err = sql.Open("mysql", "user:password@/dbname?charset=utf8")
-    if err != nil {
-        panic(err)
-    }
-    receiveCredentials, err = database.Prepare("SELECT user FROM users WHERE user=? LIMIT 1;")
-    if err != nil {
-        panic(err)
+    if config.Authentication {
+        database, err = sql.Open("mysql", "user:password@/dbname?charset=utf8")
+        if err != nil {
+            panic(err)
+        }
+        receiveCredentials, err = database.Prepare("SELECT user FROM users WHERE user=? LIMIT 1;")
+        if err != nil {
+            panic(err)
+        }
     }
 }
 
@@ -61,30 +65,55 @@ func (self LoginStatus) Error () string {
 
 
 /* A type for the permissions used in the proxy */
-type Perm int8
+type Permission int8
 
 /* The different kind of permissions used in the proxy */
 const (
-	PERM_ADMIN Perm = iota // Admin access, can do anything
-	PERM_META // Able to edit current active metadata (mp3 only)
-	PERM_SOURCE // Able to be a source on the server
+    PERM_NONE Permission = iota // Unable to do anything
+    PERM_ADMIN // Admin access, can do anything
+    PERM_META // Able to edit current active metadata (mp3 only)
+    PERM_SOURCE // Able to be a source on the server
 )
 
-type User struct {
-	name string
-	perm Perm
+type UserID struct {
+	Name string
+    Pass string
+	Perm Permission
+    // The useragent used by the client
+    Agent string
+    Addr string
 }
 
+func NewUserFromRequest(r *http.Request) (user *UserID) {
+    user = &UserID{}
+    
+    // The user should have no permissions on creation.
+    user.Perm = PERM_NONE
+    
+    // Retrieve credentials from the request (Basic Authorization)
+    // These are empty strings if no auth was found.
+    user.Name, user.Pass = ParseDigest(r)
+    
+    // The address used by the client.
+    user.Addr = r.RemoteAddr    
+    
+    // Retrieve the useragent from the request
+    if useragent := r.Header.Get("User-Agent"); useragent != "" {
+        user.Agent = useragent
+    }
+    
+    return
+}
 
-func Login(username string, password string) (user User, err error) {
+func (self *UserID) Login() (err error) {
     /* Logs in an user */
-    if username == "source" {
+    if self.Name == "source" {
         /* If the user is set to 'source' we need to make sure the
         actual username isn't in the password field as a | separated
         value */
-        if strings.Contains(password, "|") {
-            temp := strings.SplitN(password, "|", 2)
-            username, password = temp[0], temp[1]
+        if strings.Contains(self.Pass, "|") {
+            temp := strings.SplitN(self.Pass, "|", 2)
+            self.Name, self.Pass = temp[0], temp[1]
         }
         /* We can be fairly sure that the login will fail if the name
         is "source" but the password field does not contain any '|'.
@@ -93,7 +122,12 @@ func Login(username string, password string) (user User, err error) {
     // All the code above should not be touched unless you know what
     // you are doing to begin with.
     
-    perm := PERM_ADMIN
+    if !config.Authentication {
+        // If the starter disabled auth we want to use ADMIN rights.
+        self.Perm = PERM_ADMIN
+        return nil
+    }
+    
     /* Continue like normal here */
 
     transaction, err := database.Begin()
@@ -101,23 +135,25 @@ func Login(username string, password string) (user User, err error) {
         log.Fatal(err)
     }
     
-    row := transaction.Stmt(receiveCredentials).QueryRow(username)
+    row := transaction.Stmt(receiveCredentials).QueryRow(self.Name)
     
     var hash string
     err = row.Scan(&hash)
+    
     if err == sql.ErrNoRows {
-        return User{}, LOGIN_ERR_REJECTED
+        return LOGIN_ERR_REJECTED
     } else if err != nil {
         // Unexpected error happened?
         log.Fatal(err)
     }
     
     /* We are in the clear, lets check out if we have the correct password */
-    if bcrypt.Match(password, hash) {
-        return User{username, perm}, nil
+    if bcrypt.Match(self.Pass, hash) {
+        self.Perm = PERM_ADMIN
+        return nil
     }
     
-    return User{}, LOGIN_ERR_REJECTED
+    return LOGIN_ERR_REJECTED
 }
 
 func ParseDigest(r *http.Request) (username string, password string) {
@@ -153,22 +189,21 @@ func AuthenticationError(w http.ResponseWriter, r *http.Request, err error) {
 
 func makeAuthHandler(fn func(w http.ResponseWriter,
                              r *http.Request,
-                             user User),) http.HandlerFunc {
+                             user *UserID),) http.HandlerFunc {
 	/* Makes a handler closure that returns an error page
 	   when the requested page requires authentication and no
 	   authentication or appropriate permissions are set */
 
     wrapped := func(w http.ResponseWriter, r *http.Request) {
-            // Get the login credentials from the request
-            username, password := ParseDigest(r)
-            if username == "" && password == "" {
+            // Create a user object from the request
+            user := NewUserFromRequest(r)
+            
+            if user.Pass == "" && user.Name == "" {
                 AuthenticationError(w, r, nil)
                 return
             }
-            
             // Check the login credentials
-            user, err := Login(username, password)
-            if err != nil {
+            if err := user.Login(); err != nil {
                 AuthenticationError(w, r, err)
                 return
             }
