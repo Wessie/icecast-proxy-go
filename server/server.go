@@ -6,7 +6,7 @@ import (
 
 
 
-func adminHandler(w http.ResponseWriter, r *http.Request, user User) {
+func adminHandler(w http.ResponseWriter, r *http.Request, user *UserID) {
     /* Creates admin panel access to the proxy. 
 
     There are two URLs special cased that only require source level
@@ -51,16 +51,35 @@ func errorHandler(w http.ResponseWriter, r *http.Request, error string) {
 }
 
 func metadataHandler(w http.ResponseWriter, r *http.Request,
-                     user User) {
+                     user *UserID) {
     /* Handles a metadata request from a source. This should make sure
     an user cannot set the metadata of another users stream and even save
     metadata of inactive users */
     return
 }
 
-func sourceHandler(w http.ResponseWriter, r *http.Request, user User) {
+func sourceHandler(w http.ResponseWriter, r *http.Request, user *UserID) {
     /* Handler for icecast source requests. This can only be called by
     authenticated requests */
+    hj, ok := w.(http.Hijacker)
+    if !ok {
+        http.Error(w, "Webserver doesn't support hijacking.",
+                   http.StatusInternalServerError)
+        return
+    }
+    
+    conn, bufrw, err := hj.Hijack()
+    if err != nil {
+        http.Error(w, err.Error(), http.StatusInternalServerError)
+        return
+    }
+    
+    // Create a client struct, this is defined in client.go
+    client := NewClient(conn, bufrw, user, "")
+    
+    ClientManager.Receiver <- client
+    
+    // The manager will handle everything from this point on
     return
 }
 
