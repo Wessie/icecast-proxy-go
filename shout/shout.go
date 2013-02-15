@@ -19,8 +19,12 @@ type Shout struct {
 }
 
 type ShoutError struct {
-    errno int
-    errstr string
+    Errno int
+    ErrStr string
+}
+
+func (self ShoutError) Error() string {
+    return self.ErrStr
 }
 
 var Protocols = map[string] C.uint {
@@ -44,11 +48,9 @@ func init() {
     C.shout_init()
 }
 
-func (self ShoutError) Error() string {
-    return self.errstr
-}
 
-func NewShout(options map[string] string) Shout {
+
+func NewShout(options map[string] string) *Shout {
     /* Creates a new Shout instance
     
     options is a mapping of settings to pass to the new Shout instance
@@ -91,13 +93,17 @@ func NewShout(options map[string] string) Shout {
     quality: A quality setting of the audio.
     */
     
+    // Create new C libshout struct
     shout_t := C.shout_new()
+    
     shout_metadata_t := C.shout_metadata_new()
     charset := "UTF-8"
     
     new := Shout{shout_t, shout_metadata_t, charset}
+    // Set the options we got passed
     new.ApplyOptions(options)
-    return new
+    
+    return &new
 }
 
 func DestroyShout(shout Shout) {
@@ -182,16 +188,16 @@ func (self *Shout) Close() error {
     return nil
 }
 
-func (self *Shout) Send(data []byte) (send int, err error) {
+func (self *Shout) Send(data []byte) (err error) {
     length := len(data)
 
-    send = int(C.shout_send(self.shout,
+    res := int(C.shout_send(self.shout,
                         (*C.uchar)(unsafe.Pointer(&data[0])),
                         (C.size_t)(length)))
-    if send < 0 {
-        return 0, self.createShoutError()
+    if res != C.SHOUTERR_SUCCESS {
+        return self.createShoutError()
     }
-    return send, nil
+    return nil
 }
 
 func (self *Shout) SetMetadata(meta string) (error) {
@@ -226,9 +232,22 @@ func (self *Shout) Delay() int {
     return int(C.shout_delay(self.shout))
 }
 
-func (self *Shout) createShoutError() error {
+func (self *Shout) createShoutError() ShoutError {
     /* Creates a Go error of the C library */
     errno := int(C.shout_get_errno(self.shout))
     errstr := C.GoString(C.shout_get_error(self.shout))
     return ShoutError{errno, errstr}
 }
+
+const (
+    ERR_SUCCESS = C.SHOUTERR_SUCCESS
+    ERR_INSANE = C.SHOUTERR_INSANE
+    ERR_MALLOC = C.SHOUTERR_MALLOC
+    ERR_NOCONNECT = C.SHOUTERR_NOCONNECT
+    ERR_NOLOGIN = C.SHOUTERR_NOLOGIN
+    ERR_SOCKET = C.SHOUTERR_SOCKET
+    ERR_METADATA = C.SHOUTERR_METADATA
+    ERR_CONNECTED = C.SHOUTERR_CONNECTED
+    ERR_UNCONNECTED = C.SHOUTERR_UNCONNECTED
+    ERR_UNSUPPORTED = C.SHOUTERR_UNSUPPORTED
+)
