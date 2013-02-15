@@ -16,3 +16,6 @@ database:
     dbname: testdb
     parameters:
         charset: utf8
+server:
+    host: 0.0.0.0
+    port: 8050
