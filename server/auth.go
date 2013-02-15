@@ -2,10 +2,11 @@ package server
 
 import (
     "github.com/Wessie/icecast-proxy-go/config"
+    "github.com/Wessie/icecast-proxy-go/http"
     "strings"
     "encoding/base64"
-    "net/http"
     "log"
+    "fmt"
 )
 
 // For authentication access
@@ -24,7 +25,7 @@ We don't want to continue the executation at all if the database
 connection is down or broken. Thus we panic to let the user notice
 this very quickly
 */
-func init() {
+func Init_auth() {
     var err error
     if config.Authentication {
         database, err = sql.Open("mysql", "user:password@/dbname?charset=utf8")
@@ -43,69 +44,7 @@ func init() {
 the HTTP pages. */
 var realm = "R/a/dio"
 
-
-/* LoginStatus is an error returned when anything goes wrong in the
-process of retrieving and verifying login credentials */
-type LoginStatus int
-
-const (
-    LOGIN_ERR_REJECTED LoginStatus = 1
-    LOGIN_ERR_EMPTY = 2
-)
-
-// We use a simple map to support human readable error strings.
-var loginErrorStrings = map[LoginStatus] string {
-    LOGIN_ERR_REJECTED: "Invalid credentials",
-    LOGIN_ERR_EMPTY: "Empty credentials",
-}
-
-func (self LoginStatus) Error () string {
-    return loginErrorStrings[self]
-}
-
-
-/* A type for the permissions used in the proxy */
-type Permission int8
-
-/* The different kind of permissions used in the proxy */
-const (
-    PERM_NONE Permission = iota // Unable to do anything
-    PERM_ADMIN // Admin access, can do anything
-    PERM_META // Able to edit current active metadata (mp3 only)
-    PERM_SOURCE // Able to be a source on the server
-)
-
-type UserID struct {
-	Name string
-    Pass string
-	Perm Permission
-    // The useragent used by the client
-    Agent string
-    Addr string
-}
-
-func NewUserFromRequest(r *http.Request) (user *UserID) {
-    user = &UserID{}
-    
-    // The user should have no permissions on creation.
-    user.Perm = PERM_NONE
-    
-    // Retrieve credentials from the request (Basic Authorization)
-    // These are empty strings if no auth was found.
-    user.Name, user.Pass = ParseDigest(r)
-    
-    // The address used by the client.
-    user.Addr = r.RemoteAddr    
-    
-    // Retrieve the useragent from the request
-    if useragent := r.Header.Get("User-Agent"); useragent != "" {
-        user.Agent = useragent
-    }
-    
-    return
-}
-
-func (self *UserID) Login() (err error) {
+func (self *ClientID) Login() (err error) {
     /* Logs in an user */
     if self.Name == "source" {
         /* If the user is set to 'source' we need to make sure the
@@ -176,6 +115,7 @@ func ParseDigest(r *http.Request) (username string, password string) {
 }
 
 func AuthenticationError(w http.ResponseWriter, r *http.Request, err error) {
+    fmt.Println("Authentication failed.")
 	/* Returns an authentication icecast error page when called. */
 	w.Header().Set("WWW-Authenticate", `Basic realm="` + realm + `"`)
     w.WriteHeader(401)
@@ -189,14 +129,14 @@ func AuthenticationError(w http.ResponseWriter, r *http.Request, err error) {
 
 func makeAuthHandler(fn func(w http.ResponseWriter,
                              r *http.Request,
-                             user *UserID),) http.HandlerFunc {
+                             user *ClientID),) http.HandlerFunc {
 	/* Makes a handler closure that returns an error page
 	   when the requested page requires authentication and no
 	   authentication or appropriate permissions are set */
 
     wrapped := func(w http.ResponseWriter, r *http.Request) {
             // Create a user object from the request
-            user := NewUserFromRequest(r)
+            user := NewClientIDFromRequest(r)
             
             if user.Pass == "" && user.Name == "" {
                 AuthenticationError(w, r, nil)
