@@ -5,6 +5,9 @@ import (
     "flag"
 )
 
+const BUFFER_SIZE = 4096
+const QUEUE_LIMIT = 20
+
 var Config *yaml.File
 var configFile string
 var Authentication bool = true
