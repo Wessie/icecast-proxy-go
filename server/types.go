@@ -2,7 +2,10 @@ package server
 
 import (
     "bufio"
+    "io"
     "net"
+    "hash/fnv"
+    "strings"
     "github.com/Wessie/icecast-proxy-go/http"
     "github.com/Wessie/icecast-proxy-go/shout"
     "github.com/Wessie/icecast-proxy-go/config"
@@ -38,9 +41,9 @@ type Permission int8
 /* The different kind of permissions used in the proxy */
 const (
     PERM_NONE Permission = iota // Unable to do anything
-    PERM_ADMIN // Admin access, can do anything
     PERM_META // Able to edit current active metadata (mp3 only)
     PERM_SOURCE // Able to be a source on the server
+    PERM_ADMIN // Admin access, can do anything
 )
 
 /* 
@@ -69,10 +72,7 @@ type ClientID struct {
 func NewClientIDFromRequest(r *http.Request) (client *ClientID) {
     client = &ClientID{}
     
-    if path := r.URL.Path; path == "/admin/metadata" {
-        parsed := r.URL.Query()
-        client.Mount = parsed.Get("mount")
-    } else if path == "/admin/listclients" {
+    if path := r.URL.Path; path == "/admin/metadata" || path == "/admin/listclients" {
         parsed := r.URL.Query()
         client.Mount = parsed.Get("mount")
     } else {
@@ -93,6 +93,21 @@ func NewClientIDFromRequest(r *http.Request) (client *ClientID) {
     
     return
 }
+
+func (self *ClientID) Hash() (ClientHash) {
+    h := fnv.New64a()
+    // Okey lets start hashing this slowly
+    io.WriteString(h, self.Name)
+    io.WriteString(h, self.Pass)
+    io.WriteString(h, self.Mount)
+    // The address also contains the port... get rid of it!
+    s := strings.Split(self.Addr, ":")
+    io.WriteString(h, s[0])
+    
+    return ClientHash(h.Sum64())
+}
+
+type ClientHash uint64
 
 type Client struct {
     // identifier of the client
@@ -116,7 +131,7 @@ type Mount struct {
     // The queue of clients
     ClientQueue chan *ClientID
     // A mapping from identifiers to known source clients
-    Clients map[*ClientID] *Client
+    Clients map[ClientHash] *Client
     // The currently active client on the stream
     Active *ClientID
     // The mount we are representing.
@@ -126,7 +141,7 @@ type Mount struct {
 }
 
 func NewMount(mount string) *Mount {
-    clients := make(map[*ClientID] *Client, 5)
+    clients := make(map[ClientHash] *Client, 5)
     
     queue := make(chan *ClientID, config.QUEUE_LIMIT)
     
@@ -152,14 +167,30 @@ type Manager struct {
     // A channel that allows to register mounts as empty
     // this way we can clean them up outside client logic.
     MountCollector chan *Mount
+    // A channel to receive metadata on
+    MetaChan chan *MetaPack
+    // This is a mapping to store a temporary metadata copy
+    metaStore map[ClientHash]string
 }
 
 func NewManager() *Manager {
     mounts := make(map[string] *Mount, 5)
     receiver := make(chan *Client, 5)
     collector := make(chan *Mount, 5)
+    meta := make(chan *MetaPack, 10)
+    metastore := make(map[ClientHash]string, 5)
     
-    return &Manager{mounts, receiver, collector}
+    return &Manager{Mounts: mounts,
+                    Receiver: receiver,
+                    MountCollector: collector,
+                    MetaChan: meta,
+                    metaStore: metastore}
+}
+
+type MetaPack struct {
+    /* A simple struct to pass through the Meta Channel */
+    Data string
+    ID *ClientID
 }
 
 type DataPack struct {

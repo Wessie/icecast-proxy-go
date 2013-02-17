@@ -8,15 +8,11 @@ import (
 )
 
 var ClientManager *Manager
-var timeout chan int
-
+var metaStoreTicker <-chan time.Time
 
 func init() {
-    // Make sure we initialize our timeout channel
-    timeout = make(chan int, 2)
-    // And add the first value!
-    timeout <- 1
-
+    metaStoreTicker = time.Tick(time.Second * 5)
+    
     ClientManager = NewManager()
     // Start the loop to handle new clients.
     go ClientManager.ProcessClients()
@@ -37,6 +33,7 @@ func (self *Manager) ProcessClients() {
                     continue
                 }
                 
+                // This is a pointer comparison, please keep that in mind.
                 if mount.Active == data.Client.ClientID {
                     // Active mount, and data HANDLE IT!
                     mount.HandleData(data)
@@ -86,6 +83,83 @@ func (self *Manager) ProcessClients() {
                 // extra help though, the rest will be done by the
                 // garbage collector
                 DestroyMount(mount)
+            case meta := <-self.MetaChan:
+                // Receiving metadata is slightly complicated because our
+                // only method to knowing if something is for a specific
+                // client is by comparing collected variables that we hope
+                // generate a unique ID for the client. The ClientID.Hash
+                // method is here for this specific cause.
+                fmt.Println("Received a meta packet")
+                
+                // Pre compute, since we are bound to use it more than once
+                // in the rest of this block.
+                meta_hash := meta.ID.Hash()
+                
+                mount, ok := self.Mounts[meta.ID.Mount]
+                
+                if !ok {
+                    // There is no mountpoint known with the name requested by
+                    // the one sending the metadata. We save it temporarily.
+                    // TODO: Saving
+                    fmt.Println("No mountpoint? strange")
+                    self.metaStore[meta_hash] = meta.Data
+                    continue
+                }
+                
+                // Pre compute, since we are bound to use it more than once
+                // in the rest of this block.
+                active_hash := mount.Active.Hash()
+                
+                fmt.Println(active_hash, meta_hash)
+                fmt.Println(mount.Active, meta.ID)
+                // We have a mountpoint with the name, but first have to check
+                // if the active client is sending data or just one of the other
+                // connected ones is.
+                
+                if active_hash != meta_hash {
+                    // This means it's one of the other clients sending metadata
+                    // Save the metadata for them for when the Active client leaves
+                    // TODO: Implement
+                    fmt.Println("Not active client")
+                    if client, ok := mount.Clients[meta_hash]; ok {
+                        client.Metadata = meta.Data
+                    } else {
+                        // We don't seem to have an actual client connected with
+                        // this specific identifier... Discard?
+                        // TODO: Check if discarding isn't needed...
+                    }
+                    continue
+                }
+                
+                // The active client is sending metadata, we don't have to do much
+                // special for this case, just send it along to icecast and save the
+                // metadata in the Client struct.
+                
+                client, ok := mount.Clients[active_hash]
+                
+                if !ok {
+                    // We... don't seem to have the active client? This should
+                    // be absolutely impossible, lets panic!
+                    panic("Active client isn't available.")
+                }
+                
+                // Set our metadata, this is mostly done for info gathering by other
+                // code. We don't actually use this value in the client server code.
+                client.Metadata = meta.Data
+                
+                // And send the metadata, we are ignoring errors here
+                // TODO: Check if ignoring errors could lead to problems.
+                go func() {
+                    time.Sleep(time.Second)
+                    err := mount.Shout.SendMetadata(meta.Data)
+                    if err != nil {
+                        fmt.Println(err)
+                    }
+                }()
+            case <-metaStoreTicker:
+                // We store metadata for unknown mounts in this mapping.
+                // We recreate it every few seconds since we don't want old data
+                self.metaStore = make(map[ClientHash]string, 5)
         }
     }
 }
@@ -149,12 +223,22 @@ func (self *Manager) RemoveClient(client *Client) {
     select {
         case mount.Active = <-mount.ClientQueue:
             fmt.Println("Switched active streamer")
-        case <-timeout:
-            timeout <- 1
+            c, ok := mount.Clients[mount.Active.Hash()]
+            if !ok {
+                // Why are we switching to this client if the client doesn't exist?
+                // Ah well just ignore it
+                // TODO: Check for possible bugs
+            }
+            
+            // We go the easy way out and send the meta into a round trip!
+            self.MetaChan <- &MetaPack{c.Metadata, c.ClientID}
+        default:
+            // Default clause so that the select doesn't hang.
+            // Removing this is equal to deathlocking, don't!
     }
     
     // Remove it from the mount map, this is our first action
-    delete(mount.Clients, client.ClientID)
+    delete(mount.Clients, client.ClientID.Hash())
     
     // We have to close the connection ourself since we Hijacked it
     client.Conn.Close()
@@ -178,7 +262,6 @@ func (self *Manager) AddClient(client *Client) error {
     fmt.Println("Adding client")
     mountName := client.ClientID.Mount
     
-    fmt.Println("Checking mount existance.")
     mount, ok := self.Mounts[mountName]
     
     if !ok {
@@ -190,16 +273,20 @@ func (self *Manager) AddClient(client *Client) error {
         self.Mounts[mountName] = mount
         
         // Add our new client
-        fmt.Println("Adding client to mapping")
-        mount.Clients[client.ClientID] = client
+        mount.Clients[client.ClientID.Hash()] = client
         
         // Since this is a new mount we can set the just added
         // stream as active
-        fmt.Println("Setting active client.")
         mount.Active = client.ClientID
         
+        // We might have saved metadata for this client. Check the storage
+        if meta, ok := self.metaStore[mount.Active.Hash()]; ok {
+            // We cheat again to not duplicate any code! Just send it back into
+            // the processor.
+            self.MetaChan <- &MetaPack{meta, client.ClientID}
+        }
+        
         // Don't forget to change the mountname to the client supplied one
-        fmt.Println("Setting mount option")
         mount.Shout.ApplyOptions(map[string] string {"mount": mountName})
 
         // We don't open the connection here because that is handled in the
@@ -209,7 +296,7 @@ func (self *Manager) AddClient(client *Client) error {
         return nil
     }
     // Mount already exists so all we have to do is add our new client to it.
-    mount.Clients[client.ClientID] = client
+    mount.Clients[client.ClientID.Hash()] = client
     
     // We want to make sure we don't deadlock if the client queue is full already.
     if len(mount.ClientQueue) < config.QUEUE_LIMIT {
@@ -225,6 +312,7 @@ func ReadInto(client *Client, dataChan chan<- *DataPack, errChan chan<- *ErrPack
     for {
         data := make([]byte, config.BUFFER_SIZE)
         
+        client.Conn.SetReadDeadline(time.Now().Add(config.Timeout))
         len, err := client.Bufrw.Read(data)
         if err != nil {
             // On any errors we just push it onto the error channel

@@ -15,7 +15,6 @@ import "C"
 type Shout struct {
     shout *C.shout_t
     shout_metadata *C.shout_metadata_t
-    charset string
 }
 
 type ShoutError struct {
@@ -59,7 +58,6 @@ func NewShout(options map[string] string) *Shout {
     All settings should be strings, they are converted accordingly when
     being set.
     
-    charset: Indicates what charset to use for metadata (mp3 only)
     metadata: The initial metadata to send to the server.
     host: The server hostname or IP. Default is localhost
     port: The server port. Default is 8000
@@ -93,13 +91,20 @@ func NewShout(options map[string] string) *Shout {
     quality: A quality setting of the audio.
     */
     
+    charset := C.CString("charset")
+    charset_option := C.CString("UTF8")
+    
+    // FREE THEM, libshout copies them over anyway.
+    defer C.free(unsafe.Pointer(charset))
+    defer C.free(unsafe.Pointer(charset_option))
+    
     // Create new C libshout struct
     shout_t := C.shout_new()
     
     shout_metadata_t := C.shout_metadata_new()
-    charset := "UTF-8"
+    C.shout_metadata_add(shout_metadata_t, charset, charset_option)
     
-    new := Shout{shout_t, shout_metadata_t, charset}
+    new := Shout{shout_t, shout_metadata_t}
     // Set the options we got passed
     new.ApplyOptions(options)
     
@@ -136,8 +141,6 @@ func (self *Shout) ApplyOptions(options map[string] string) error {
             case "protocol":
                 proto := Protocols[value]
                 C.shout_set_protocol(self.shout, proto)
-            case "charset":
-                self.charset = value
             case "format":
                 format := Formats[value]
                 C.shout_set_format(self.shout, format)
@@ -200,7 +203,7 @@ func (self *Shout) Send(data []byte) (err error) {
     return nil
 }
 
-func (self *Shout) SetMetadata(meta string) (error) {
+func (self *Shout) SendMetadata(meta string) (error) {
     /* Updates the metadata. This is only supported for MP3 streams */
     new_string := C.CString(meta)
     song_string := C.CString("song")
@@ -209,6 +212,11 @@ func (self *Shout) SetMetadata(meta string) (error) {
     defer C.free(unsafe.Pointer(song_string))
     
     i := C.shout_metadata_add(self.shout_metadata, song_string, new_string)
+    if i != C.SHOUTERR_SUCCESS {
+        return self.createShoutError()
+    }
+    
+    i = C.shout_set_metadata(self.shout, self.shout_metadata)
     if i != C.SHOUTERR_SUCCESS {
         return self.createShoutError()
     }

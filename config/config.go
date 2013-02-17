@@ -3,20 +3,41 @@ package config
 import (
     "github.com/kylelemons/go-gypsy/yaml"
     "flag"
+    "time"
 )
 
 const BUFFER_SIZE = 4096
 const QUEUE_LIMIT = 20
+const Timeout = time.Second * 5
 
 var Config *yaml.File
 var configFile string
 var Authentication bool = true
+var ServerAddress = ":"
+
 
 func init() {
     flag.StringVar(&configFile, "c", "proxy.yaml", "Configuration file path.")
     flag.BoolVar(&Authentication, "auth", true, "False if authentication should be disabled")
     flag.Parse()
     Config = yaml.ConfigFile(configFile)
+    
+    node, err := yaml.Child(Config.Root, "server")
+    if err != nil {
+        panic("Server configuration missing.")
+    }
+    
+    if m, ok := node.(yaml.Map); ok {
+        for key, value := range m {
+            if scalar, ok := value.(yaml.Scalar); ok {
+                if key == "host" {
+                    ServerAddress = string(scalar) + ServerAddress
+                } else if key == "port" {
+                    ServerAddress = ServerAddress + string(scalar)
+                }
+            }
+        }
+    }
 }
 
 func CreateShoutMap() map[string] string {

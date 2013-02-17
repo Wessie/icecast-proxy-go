@@ -2,6 +2,8 @@ package server
 
 import (
     "github.com/Wessie/icecast-proxy-go/http"
+    "github.com/Wessie/icecast-proxy-go/config"
+    "time"
     "fmt"
     "io"
     "strconv"
@@ -27,19 +29,19 @@ func mainHandler(w http.ResponseWriter, r *http.Request) {
     fmt.Println(r.URL)
     if r.Method == "SOURCE" {
         /* This is a new icecast source, pass it to the separate handler */
-        makeAuthHandler(sourceHandler)(w, r)
+        makeAuthHandler(sourceHandler, PERM_SOURCE)(w, r)
     } else if r.Method == "GET" {
         path := r.URL.Path
         lenPath := len(path)
         if path == "/admin/metadata" {
             /* An mp3 metadata update */
-            makeAuthHandler(metadataHandler)(w, r)
+            makeAuthHandler(metadataHandler, PERM_META)(w, r)
         } else if path == "/admin/listclients" {
             /* A request to get the mountpoint listeners. */
-            makeAuthHandler(listclientsHandler)(w, r)
+            makeAuthHandler(listclientsHandler, PERM_SOURCE)(w, r)
         } else if lenPath >= 6 && path[:6] == "/admin" {
             /* Admin access, pass it to the handler */
-            makeAuthHandler(adminHandler)(w, r)
+            makeAuthHandler(adminHandler, PERM_ADMIN)(w, r)
         } else {
             http.NotFound(w, r)
         }
@@ -67,7 +69,34 @@ func metadataHandler(w http.ResponseWriter, r *http.Request,
     /* Handles a metadata request from a source. This should make sure
     an user cannot set the metadata of another users stream and even save
     metadata of inactive users */
-    fmt.Println("Sending back empty response")
+    var meta string
+    
+    parsed := r.URL.Query()
+    
+    meta = parsed.Get("song")
+    if meta == "" {
+        // Someone is trying to not update the metadata?
+        // Ignore the fucker
+        return
+    }
+    
+    var charset string
+    if e := parsed.Get("charset"); e != "" {
+        // TODO: Check if user specified encodings are not vulnerable to exploits
+        charset = e
+    } else {
+        charset = "latin1"
+    }
+
+    // This isn't so much a parser as it is a encoding handler.
+    meta = ParseMetadata(charset, meta)
+
+    fmt.Println(meta)
+    // Sending empty metadata is useless, so we don't
+    if meta != "" {
+        // And we are done here, send the data we have so far along
+        ClientManager.MetaChan <- &MetaPack{Data: meta, ID: clientID}
+    }
     
     response := []byte("<?xml version=\"1.0\"?>\n<iceresponse><message>Metadata update successful</message><return>1</return></iceresponse>\n")
     
@@ -116,9 +145,13 @@ func sourceHandler(w http.ResponseWriter, r *http.Request, clientID *ClientID) {
 func Initialize() {
     // Call auth init here since it depends on some other initializions
     Init_auth()
-    
-    http.HandleFunc("/admin", makeAuthHandler(adminHandler))
-    http.HandleFunc("/", mainHandler)
 
-    http.ListenAndServe(":8050", nil)
+    mux := http.NewServeMux()
+    mux.HandleFunc("/", mainHandler)
+
+    server := http.Server{Addr: config.ServerAddress,
+                          Handler: mux,
+                          ReadTimeout: time.Second*10,
+                          WriteTimeout: time.Second*5}
+    server.ListenAndServe()
 }

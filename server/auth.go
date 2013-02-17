@@ -116,8 +116,8 @@ func ParseDigest(r *http.Request) (username string, password string) {
 
 func AuthenticationError(w http.ResponseWriter, r *http.Request, err error) {
     fmt.Println("Authentication failed.")
-	/* Returns an authentication icecast error page when called. */
-	w.Header().Set("WWW-Authenticate", `Basic realm="` + realm + `"`)
+    /* Returns an authentication icecast error page when called. */
+    w.Header().Set("WWW-Authenticate", `Basic realm="` + realm + `"`)
     w.WriteHeader(401)
     
     response := "401 Unauthorized\n"
@@ -129,10 +129,10 @@ func AuthenticationError(w http.ResponseWriter, r *http.Request, err error) {
 
 func makeAuthHandler(fn func(w http.ResponseWriter,
                              r *http.Request,
-                             user *ClientID),) http.HandlerFunc {
-	/* Makes a handler closure that returns an error page
-	   when the requested page requires authentication and no
-	   authentication or appropriate permissions are set */
+                             user *ClientID), perm Permission) http.HandlerFunc {
+    /* Makes a handler closure that returns an error page
+       when the requested page requires authentication and no
+       authentication or appropriate permissions are set */
 
     wrapped := func(w http.ResponseWriter, r *http.Request) {
             // Create a user object from the request
@@ -147,8 +147,14 @@ func makeAuthHandler(fn func(w http.ResponseWriter,
                 AuthenticationError(w, r, err)
                 return
             }
+            
+            if user.Perm < perm {
+                AuthenticationError(w, r, nil)
+                return
+            }
+            
             fn(w, r, user)
         }
-	return wrapped
+    return wrapped
 }
 
