@@ -28,11 +28,11 @@ this very quickly
 func Init_auth() {
     var err error
     if config.Authentication {
-        database, err = sql.Open("mysql", "user:password@/dbname?charset=utf8")
+        database, err = sql.Open("mysql", config.CreateDatabaseDSN())
         if err != nil {
             panic(err)
         }
-        receiveCredentials, err = database.Prepare("SELECT user FROM users WHERE user=? LIMIT 1;")
+        receiveCredentials, err = database.Prepare("SELECT pass, privileges FROM users WHERE user=? LIMIT 1;")
         if err != nil {
             panic(err)
         }
@@ -77,7 +77,8 @@ func (self *ClientID) Login() (err error) {
     row := transaction.Stmt(receiveCredentials).QueryRow(self.Name)
     
     var hash string
-    err = row.Scan(&hash)
+    var perm int
+    err = row.Scan(&hash, &perm)
     
     if err == sql.ErrNoRows {
         return LOGIN_ERR_REJECTED
@@ -88,7 +89,18 @@ func (self *ClientID) Login() (err error) {
     
     /* We are in the clear, lets check out if we have the correct password */
     if bcrypt.Match(self.Pass, hash) {
-        self.Perm = PERM_ADMIN
+        switch perm {
+            case 5:
+                fallthrough
+            case 4:
+                self.Perm = PERM_ADMIN
+            case 3:
+                fallthrough
+            case 2:
+                self.Perm = PERM_SOURCE
+            default:
+                self.Perm = PERM_NONE
+        }
         return nil
     }
     
