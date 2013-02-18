@@ -4,7 +4,6 @@ import (
     "github.com/Wessie/icecast-proxy-go/config"
     "github.com/Wessie/icecast-proxy-go/shout"
     "time"
-    "fmt"
 )
 
 var ClientManager *Manager
@@ -47,7 +46,6 @@ func (self *Manager) ProcessClients() {
                 // We should log the error here
                 // TODO: Add logging
             case client := <-self.Receiver:
-                fmt.Println("manager: new client received.")
                 // A new client, let a different function handle
                 // the preparations required.
                 err := self.AddClient(client)
@@ -89,7 +87,6 @@ func (self *Manager) ProcessClients() {
                 // client is by comparing collected variables that we hope
                 // generate a unique ID for the client. The ClientID.Hash
                 // method is here for this specific cause.
-                fmt.Println("Received a meta packet")
                 
                 // Pre compute, since we are bound to use it more than once
                 // in the rest of this block.
@@ -101,7 +98,6 @@ func (self *Manager) ProcessClients() {
                     // There is no mountpoint known with the name requested by
                     // the one sending the metadata. We save it temporarily.
                     // TODO: Saving
-                    fmt.Println("No mountpoint? strange")
                     self.metaStore[meta_hash] = meta.Data
                     continue
                 }
@@ -110,8 +106,6 @@ func (self *Manager) ProcessClients() {
                 // in the rest of this block.
                 active_hash := mount.Active.Hash()
                 
-                fmt.Println(active_hash, meta_hash)
-                fmt.Println(mount.Active, meta.ID)
                 // We have a mountpoint with the name, but first have to check
                 // if the active client is sending data or just one of the other
                 // connected ones is.
@@ -120,7 +114,6 @@ func (self *Manager) ProcessClients() {
                     // This means it's one of the other clients sending metadata
                     // Save the metadata for them for when the Active client leaves
                     // TODO: Implement
-                    fmt.Println("Not active client")
                     if client, ok := mount.Clients[meta_hash]; ok {
                         client.Metadata = meta.Data
                     } else {
@@ -138,9 +131,9 @@ func (self *Manager) ProcessClients() {
                 client, ok := mount.Clients[active_hash]
                 
                 if !ok {
-                    // We... don't seem to have the active client? This should
-                    // be absolutely impossible, lets panic!
-                    panic("Active client isn't available.")
+                    // We... don't seem to have the active client?
+                    // Lets drop the packet and just continue on!
+                    continue
                 }
                 
                 // Set our metadata, this is mostly done for info gathering by other
@@ -153,7 +146,7 @@ func (self *Manager) ProcessClients() {
                     time.Sleep(time.Second)
                     err := mount.Shout.SendMetadata(meta.Data)
                     if err != nil {
-                        fmt.Println(err)
+                        
                     }
                 }()
             case <-metaStoreTicker:
@@ -173,7 +166,6 @@ func (self *Mount) HandleData(data *DataPack) {
         if err != nil {
             // Error occured while connecting, we ditch the data and retry
             // on the next package
-            fmt.Println(err)
             return
         }
     }
@@ -209,7 +201,6 @@ func (self *Manager) RemoveClient(client *Client) {
     
     If no clients are left on this mountpoint the mount will be
     cleaned up. */
-    fmt.Println("Removing client!")
     mountName := client.ClientID.Mount
     
     mount, ok := self.Mounts[mountName]
@@ -222,7 +213,6 @@ func (self *Manager) RemoveClient(client *Client) {
     // connected already.
     select {
         case mount.Active = <-mount.ClientQueue:
-            fmt.Println("Switched active streamer")
             c, ok := mount.Clients[mount.Active.Hash()]
             if !ok {
                 // Why are we switching to this client if the client doesn't exist?
@@ -259,13 +249,11 @@ func (self *Manager) RemoveClient(client *Client) {
 func (self *Manager) AddClient(client *Client) error {
     /* Adds a client to the respective mount point, if no mount
     point with the given name currently exist a new one is created */
-    fmt.Println("Adding client")
     mountName := client.ClientID.Mount
     
     mount, ok := self.Mounts[mountName]
     
     if !ok {
-        fmt.Println("No mountpoint exists, creating one.")
         // We don't have a mount yet so we create our own
         mount := NewMount(mountName)
         
@@ -286,13 +274,20 @@ func (self *Manager) AddClient(client *Client) error {
             self.MetaChan <- &MetaPack{meta, client.ClientID}
         }
         
+        var audio_format string
+        if client.ClientID.AudioFormat == "" {
+            audio_format = "MP3"
+        } else {
+            audio_format = client.ClientID.AudioFormat
+        }
+        
         // Don't forget to change the mountname to the client supplied one
-        mount.Shout.ApplyOptions(map[string] string {"mount": mountName})
+        mount.Shout.ApplyOptions(map[string] string {"mount": mountName,
+                                                     "format": audio_format})
 
         // We don't open the connection here because that is handled in the
         // data sending function instead. This keeps the logic simple when
         // potential disconnects or network issues are involved.
-        fmt.Println("Finished creating mount")
         return nil
     }
     // Mount already exists so all we have to do is add our new client to it.

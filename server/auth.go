@@ -6,7 +6,6 @@ import (
     "strings"
     "encoding/base64"
     "log"
-    "fmt"
 )
 
 // For authentication access
@@ -32,7 +31,7 @@ func Init_auth() {
         if err != nil {
             panic(err)
         }
-        receiveCredentials, err = database.Prepare("SELECT pass, privileges FROM users WHERE user=? LIMIT 1;")
+        receiveCredentials, err = database.Prepare("SELECT pass, privileges FROM users WHERE LOWER(user)=LOWER(?) LIMIT 1;")
         if err != nil {
             panic(err)
         }
@@ -127,7 +126,6 @@ func ParseDigest(r *http.Request) (username string, password string) {
 }
 
 func AuthenticationError(w http.ResponseWriter, r *http.Request, err error) {
-    fmt.Println("Authentication failed.")
     /* Returns an authentication icecast error page when called. */
     w.Header().Set("WWW-Authenticate", `Basic realm="` + realm + `"`)
     w.WriteHeader(401)

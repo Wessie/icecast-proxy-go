@@ -4,7 +4,6 @@ import (
     "github.com/Wessie/icecast-proxy-go/http"
     "github.com/Wessie/icecast-proxy-go/config"
     "time"
-    "fmt"
     "io"
     "strconv"
 )
@@ -26,7 +25,6 @@ func mainHandler(w http.ResponseWriter, r *http.Request) {
     if something is a valid mount (and has to pass to the sourceHandler)
     or is a different valid or invalid URL. 
     */
-    fmt.Println(r.URL)
     if r.Method == "SOURCE" {
         /* This is a new icecast source, pass it to the separate handler */
         makeAuthHandler(sourceHandler, PERM_SOURCE)(w, r)
@@ -91,7 +89,6 @@ func metadataHandler(w http.ResponseWriter, r *http.Request,
     // This isn't so much a parser as it is a encoding handler.
     meta = ParseMetadata(charset, meta)
 
-    fmt.Println(meta)
     // Sending empty metadata is useless, so we don't
     if meta != "" {
         // And we are done here, send the data we have so far along
@@ -107,7 +104,7 @@ func metadataHandler(w http.ResponseWriter, r *http.Request,
 func sourceHandler(w http.ResponseWriter, r *http.Request, clientID *ClientID) {
     /* Handler for icecast source requests. This can only be called by
     authenticated requests */
-    fmt.Println("New source request")
+
     // Icecast clients expect a 200 OK response before sending data.
     w.WriteHeader(http.StatusOK)
     // Make sure to send the extra newline to signify end of headers
@@ -122,14 +119,12 @@ func sourceHandler(w http.ResponseWriter, r *http.Request, clientID *ClientID) {
     if !ok {
         http.Error(w, "Webserver doesn't support hijacking.",
                    http.StatusInternalServerError)
-        fmt.Println("Webserver doesn't support hijacking.")
         return
     }
     
     conn, bufrw, err := hj.Hijack()
     if err != nil {
         http.Error(w, err.Error(), http.StatusInternalServerError)
-        fmt.Println(err.Error())
         return
     }
     

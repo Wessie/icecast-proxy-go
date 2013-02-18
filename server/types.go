@@ -67,10 +67,21 @@ type ClientID struct {
     Addr string
     // Mountpoint requested, "" if not used
     Mount string
+    // Audio data format, "" if not used
+    AudioFormat string
 }
 
 func NewClientIDFromRequest(r *http.Request) (client *ClientID) {
     client = &ClientID{}
+    
+    switch cont := r.Header.Get("Content-Type"); {
+        case cont == "audio/mpeg":
+            client.AudioFormat = "MP3"
+        case cont == "audio/ogg", cont == "application/ogg":
+            client.AudioFormat = "OGG"
+        default:
+            client.AudioFormat = ""
+    }
     
     if path := r.URL.Path; path == "/admin/metadata" || path == "/admin/listclients" {
         parsed := r.URL.Query()
