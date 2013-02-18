@@ -5,7 +5,6 @@ import (
     "github.com/Wessie/icecast-proxy-go/http"
     "strings"
     "encoding/base64"
-    "log"
 )
 
 // For authentication access
@@ -68,11 +67,16 @@ func (self *ClientID) Login() (err error) {
     
     /* Continue like normal here */
 
+    // Start a database transaction
     transaction, err := database.Begin()
     if err != nil {
-        log.Fatal(err)
+        // A database error.. most likely this is a DB down error.
+        // Log the case and reject the login
+        // TODO: Logging
+        return LOGIN_ERR_REJECTED
     }
     
+    // Use a prepared statement with the transaction.
     row := transaction.Stmt(receiveCredentials).QueryRow(self.Name)
     
     var hash string
@@ -83,7 +87,8 @@ func (self *ClientID) Login() (err error) {
         return LOGIN_ERR_REJECTED
     } else if err != nil {
         // Unexpected error happened?
-        log.Fatal(err)
+        // TODO: Logging
+        return LOGIN_ERR_REJECTED
     }
     
     /* We are in the clear, lets check out if we have the correct password */
