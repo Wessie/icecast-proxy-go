@@ -229,7 +229,7 @@ func (self *Manager) RemoveClient(client *Client) {
     if mount.Active == client.ClientID {
         // First swap out the active client if we have another client
         // connected already.
-        for {
+        client_for_loop: for {
             select {
                 case mount.Active = <-mount.ClientQueue:
                                 
@@ -243,12 +243,12 @@ func (self *Manager) RemoveClient(client *Client) {
                     // We go the easy way out and send the meta into a round trip!
                     self.MetaChan <- &MetaPack{c.Metadata, c.ClientID}
                     // And don't forget to break out of our little loop
-                    break
+                    break client_for_loop
                 default:
                     // Default clause so that the select doesn't hang.
                     // Removing this is equal to deathlocking, don't!
                     // We have no clients left on the queue.. break the loop
-                    break
+                    break client_for_loop
             }
             logger.Printf("%s:switch client: %s -> %s",
                         client.ClientID.Mount, client.ClientID.Name,
