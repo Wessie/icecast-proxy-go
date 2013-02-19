@@ -208,12 +208,13 @@ func (self *Mount) HandleData(data *DataPack) {
     }
 }
 
+/* Removes a client from the mount point and prepares it for
+deletion.
+
+If no clients are left on this mountpoint the mount will be
+cleaned up. */
 func (self *Manager) RemoveClient(client *Client) {
-    /* Removes a client from the mount point and prepares it for
-    deletion.
     
-    If no clients are left on this mountpoint the mount will be
-    cleaned up. */
     logger.Printf("%s:remove client: %s @ %s", client.ClientID.Mount,
                   client.ClientID.Name, client.ClientID.Addr)
                   
@@ -274,9 +275,18 @@ func (self *Manager) RemoveClient(client *Client) {
     }
 }
 
-func (self *Manager) AddClient(client *Client) error {
-    /* Adds a client to the respective mount point, if no mount
-    point with the given name currently exist a new one is created */
+/* Adds a client to the respective mount point, if no mount
+point with the given name currently exist a new one is created */
+func (self *Manager) AddClient(client *Client) (err error) {
+    defer func() {
+        /* This makes sure we can't panic inside this method */
+        if x := recover(); x != nil {
+            log.Printf("run time panic: %v", x)
+            // We use the full queue error here since that is a known one.
+            err = &FullQueue{}
+        }
+    }()
+    
     logger.Printf("%s:new client: %s @ %s", client.ClientID.Mount,
                   client.ClientID.Name, client.ClientID.Addr)
                   
@@ -337,6 +347,15 @@ func (self *Manager) AddClient(client *Client) error {
 }
 
 func ReadInto(client *Client, dataChan chan<- *DataPack, errChan chan<- *ErrPack) {
+    defer func() {
+        // Function to protect the rest of the runtime from panics in here.
+        // This will send an error to the manager
+        if x := recover(); x != nil {
+            log.Printf("run time panic: %v", x)
+            errChan <- &ErrPack{nil, client}
+        }
+    }()
+    
     for {
         data := make([]byte, config.BUFFER_SIZE)
         
