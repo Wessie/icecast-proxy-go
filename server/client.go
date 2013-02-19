@@ -4,13 +4,19 @@ import (
     "github.com/Wessie/icecast-proxy-go/config"
     "github.com/Wessie/icecast-proxy-go/shout"
     "time"
+    "log"
+    "os"
 )
 
 var ClientManager *Manager
 var metaStoreTicker <-chan time.Time
+var logger *log.Logger
+
 
 func init() {
     metaStoreTicker = time.Tick(time.Second * 5)
+    
+    logger = log.New(os.Stdout, "", log.LstdFlags | log.Lmicroseconds)
     
     ClientManager = NewManager()
     // Start the loop to handle new clients.
@@ -61,13 +67,17 @@ func (self *Manager) ProcessClients() {
             case mount := <-self.MountCollector:
                 // The mount is 'empty' we have to do some checks and clean up
                 // if neccesary
+                logger.Printf("%s:collecting:", mount.Mount)
+                
                 if len(mount.Clients) > 0 {
                     // The mount got a new client while waiting, ignore it.
+                    logger.Printf("%s:collection aborted:", mount.Mount)
                     continue
                 }
                 // no new clients so we have to clean it up.
                 
                 // Close our connection to the server
+                logger.Printf("%s:icecast disconnect:", mount.Mount)
                 err := mount.Shout.Close()
                 if err != nil {
                     // Log the error but don't do anything with it other than that
@@ -81,6 +91,7 @@ func (self *Manager) ProcessClients() {
                 // extra help though, the rest will be done by the
                 // garbage collector
                 DestroyMount(mount)
+                logger.Printf("%s:collection finished:", mount.Mount)
             case meta := <-self.MetaChan:
                 // Receiving metadata is slightly complicated because our
                 // only method to knowing if something is for a specific
@@ -162,8 +173,10 @@ func (self *Mount) HandleData(data *DataPack) {
     
     // First check if we are connected at all
     if !self.Shout.Connected() {
+        logger.Printf("%s:icecast connecting:", self.Mount)
         err := self.Shout.Open()
         if err != nil {
+            logger.Printf("%s:icecast error: %s", self.Mount, err.Error())
             // Error occured while connecting, we ditch the data and retry
             // on the next package
             return
@@ -201,6 +214,9 @@ func (self *Manager) RemoveClient(client *Client) {
     
     If no clients are left on this mountpoint the mount will be
     cleaned up. */
+    logger.Printf("%s:remove client: %s @ %s", client.ClientID.Mount,
+                  client.ClientID.Name, client.ClientID.Addr)
+                  
     mountName := client.ClientID.Mount
     
     mount, ok := self.Mounts[mountName]
@@ -214,6 +230,10 @@ func (self *Manager) RemoveClient(client *Client) {
         // connected already.
         select {
             case mount.Active = <-mount.ClientQueue:
+                logger.Printf("%s:switch client: %s -> %s",
+                            client.ClientID.Mount, client.ClientID.Name,
+                            mount.Active.Name)
+                            
                 c, ok := mount.Clients[mount.Active.Hash()]
                 if !ok {
                     // Why are we switching to this client if the client doesn't exist?
@@ -251,11 +271,16 @@ func (self *Manager) RemoveClient(client *Client) {
 func (self *Manager) AddClient(client *Client) error {
     /* Adds a client to the respective mount point, if no mount
     point with the given name currently exist a new one is created */
+    logger.Printf("%s:new client: %s @ %s", client.ClientID.Mount,
+                  client.ClientID.Name, client.ClientID.Addr)
+                  
     mountName := client.ClientID.Mount
     
     mount, ok := self.Mounts[mountName]
     
     if !ok {
+        logger.Printf("%s:new mount:", client.ClientID.Mount)
+        
         // We don't have a mount yet so we create our own
         mount := NewMount(mountName)
         
