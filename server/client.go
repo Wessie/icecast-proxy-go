@@ -228,24 +228,30 @@ func (self *Manager) RemoveClient(client *Client) {
     if mount.Active == client.ClientID {
         // First swap out the active client if we have another client
         // connected already.
-        select {
-            case mount.Active = <-mount.ClientQueue:
-                logger.Printf("%s:switch client: %s -> %s",
-                            client.ClientID.Mount, client.ClientID.Name,
-                            mount.Active.Name)
-                            
-                c, ok := mount.Clients[mount.Active.Hash()]
-                if !ok {
-                    // Why are we switching to this client if the client doesn't exist?
-                    // Ah well just ignore it
-                    // TODO: Check for possible bugs
-                }
-                
-                // We go the easy way out and send the meta into a round trip!
-                self.MetaChan <- &MetaPack{c.Metadata, c.ClientID}
-            default:
-                // Default clause so that the select doesn't hang.
-                // Removing this is equal to deathlocking, don't!
+        for {
+            select {
+                case mount.Active = <-mount.ClientQueue:
+                                
+                    c, ok := mount.Clients[mount.Active.Hash()]
+                    if !ok {
+                        continue
+                        // Why are we switching to this client if the client doesn't exist?
+                        // Ah well just ignore it
+                        // TODO: Check for possible bugs
+                    }
+                    // We go the easy way out and send the meta into a round trip!
+                    self.MetaChan <- &MetaPack{c.Metadata, c.ClientID}
+                    // And don't forget to break out of our little loop
+                    break
+                default:
+                    // Default clause so that the select doesn't hang.
+                    // Removing this is equal to deathlocking, don't!
+                    // We have no clients left on the queue.. break the loop
+                    break
+            }
+            logger.Printf("%s:switch client: %s -> %s",
+                        client.ClientID.Mount, client.ClientID.Name,
+                        mount.Active.Name)
         }
     }
     
