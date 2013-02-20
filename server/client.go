@@ -108,7 +108,6 @@ func (self *Manager) ProcessClients() {
                 if !ok {
                     // There is no mountpoint known with the name requested by
                     // the one sending the metadata. We save it temporarily.
-                    // TODO: Saving
                     self.metaStore[meta_hash] = meta.Data
                     continue
                 }
@@ -124,7 +123,6 @@ func (self *Manager) ProcessClients() {
                 if active_hash != meta_hash {
                     // This means it's one of the other clients sending metadata
                     // Save the metadata for them for when the Active client leaves
-                    // TODO: Implement
                     if client, ok := mount.Clients[meta_hash]; ok {
                         client.Metadata = meta.Data
                     } else {
@@ -168,8 +166,8 @@ func (self *Manager) ProcessClients() {
     }
 }
 
+/* Sends the data in the packet to the icecast server */
 func (self *Mount) HandleData(data *DataPack) {
-    /* Sends the data in the packet to the icecast server */
     
     // First check if we are connected at all
     if !self.Shout.Connected() {
@@ -267,11 +265,7 @@ func (self *Manager) RemoveClient(client *Client) {
         // right away because it's common for two sources to overlap or
         // swap each other out with a very small delay. This gives it a
         // small window to reuse the libshout instance and connection.
-        go func(collector chan<- *Mount) {
-            // Sleep for 5 seconds to give a proper window size.
-            time.Sleep(time.Second * 5)
-            collector <- mount
-        }(self.MountCollector)
+        self.MountCollector <- mount
     }
 }
 
