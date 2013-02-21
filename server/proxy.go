@@ -267,7 +267,7 @@ func (self *Manager) RemoveClient(client *Client) {
                         // TODO: Check for possible bugs
                     }
                     // We go the easy way out and send the meta into a round trip!
-                    self.MetaChan <- &MetaPack{c.Metadata, c.ClientID}
+                    self.MetaChan <- &MetaPack{c.Metadata, c.ClientID, false}
                     // And don't forget to break out of our little loop
                     break client_for_loop
                 default:
@@ -336,7 +336,7 @@ func (self *Manager) AddClient(client *Client) (err error) {
         if meta, ok := self.metaStore[mount.Active.Hash()]; ok {
             // We cheat again to not duplicate any code! Just send it back into
             // the processor.
-            self.MetaChan <- &MetaPack{meta, client.ClientID}
+            self.MetaChan <- &MetaPack{meta, client.ClientID, false}
         }
         
         var audio_format string
