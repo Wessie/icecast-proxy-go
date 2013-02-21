@@ -167,7 +167,15 @@ func (self *Manager) ProcessClients() {
                 
                 // And send the metadata, we are ignoring errors here
                 // TODO: Check if ignoring errors could lead to problems.
-                mount.Shout.SendMetadata(meta.Data)
+                if meta.Seen {
+                    mount.Shout.SendMetadata(meta.Data)
+                } else {
+                    go func() {
+                        time.Sleep(time.Second)
+                        meta.Seen = true
+                        self.MetaChan <- meta
+                    }()
+                }
             case <-metaStoreTicker:
                 // We store metadata for unknown mounts in this mapping.
                 // We recreate it every few seconds since we don't want old data

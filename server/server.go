@@ -92,7 +92,7 @@ func metadataHandler(w http.ResponseWriter, r *http.Request,
     // Sending empty metadata is useless, so we don't
     if meta != "" {
         // And we are done here, send the data we have so far along
-        ClientManager.MetaChan <- &MetaPack{Data: meta, ID: clientID}
+        ClientManager.MetaChan <- &MetaPack{Data: meta, ID: clientID, Seen: false}
     }
     
     response := []byte("<?xml version=\"1.0\"?>\n<iceresponse><message>Metadata update successful</message><return>1</return></iceresponse>\n")
