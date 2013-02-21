@@ -260,11 +260,12 @@ func (self *Manager) RemoveClient(client *Client) {
                 case mount.Active = <-mount.ClientQueue:
                                 
                     c, ok := mount.Clients[mount.Active.Hash()]
-                    if !ok {
+                    if !ok || c != mount.Active {
+                        // Make sure we have the actual correct client, this
+                        // also ok's if the client reconnected quickly.
                         continue
                         // Why are we switching to this client if the client doesn't exist?
                         // Ah well just ignore it
-                        // TODO: Check for possible bugs
                     }
                     // We go the easy way out and send the meta into a round trip!
                     self.MetaChan <- &MetaPack{c.Metadata, c.ClientID, false}
