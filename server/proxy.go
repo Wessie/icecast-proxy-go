@@ -167,13 +167,7 @@ func (self *Manager) ProcessClients() {
                 
                 // And send the metadata, we are ignoring errors here
                 // TODO: Check if ignoring errors could lead to problems.
-                go func() {
-                    time.Sleep(time.Second)
-                    err := mount.Shout.SendMetadata(meta.Data)
-                    if err != nil {
-                        
-                    }
-                }()
+                mount.Shout.SendMetadata(meta.Data)
             case <-metaStoreTicker:
                 // We store metadata for unknown mounts in this mapping.
                 // We recreate it every few seconds since we don't want old data
@@ -274,10 +268,10 @@ func (self *Manager) RemoveClient(client *Client) {
                     // We have no clients left on the queue.. break the loop
                     break client_for_loop
             }
-            logger.Printf("%s:switch client: %s -> %s",
-                        client.ClientID.Mount, client.ClientID.Name,
-                        mount.Active.Name)
         }
+        logger.Printf("%s:switch client: %s -> %s",
+                    client.ClientID.Mount, client.ClientID.Name,
+                    mount.Active.Name)
     }
     
     // Remove it from the mount map, this is our first action
