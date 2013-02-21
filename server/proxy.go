@@ -260,7 +260,7 @@ func (self *Manager) RemoveClient(client *Client) {
                 case mount.Active = <-mount.ClientQueue:
                                 
                     c, ok := mount.Clients[mount.Active.Hash()]
-                    if !ok || c != mount.Active {
+                    if !ok || c.ClientID != mount.Active {
                         // Make sure we have the actual correct client, this
                         // also ok's if the client reconnected quickly.
                         continue
