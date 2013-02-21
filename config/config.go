@@ -7,7 +7,7 @@ import (
 )
 
 const BUFFER_SIZE = 4096
-const QUEUE_LIMIT = 20
+const QUEUE_LIMIT = 100
 const Timeout = time.Second * 5
 
 var Config *yaml.File
