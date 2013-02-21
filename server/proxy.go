@@ -194,6 +194,9 @@ func (self *Mount) HandleData(data *DataPack) {
     
     // First check if we are connected at all
     if !self.Shout.Connected() {
+        // Do a close call to be sure of no lingering connections.
+        self.Shout.Close()
+        
         logger.Printf("%s:icecast connecting:", self.Mount)
         err := self.Shout.Open()
         if err != nil {
