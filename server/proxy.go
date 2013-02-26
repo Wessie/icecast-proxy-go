@@ -85,7 +85,7 @@ func (self *Manager) ProcessClients() {
                 // if neccesary
                 logger.Printf("%s:collecting:", mount.Mount)
                 
-                if len(mount.Clients) > 0 {
+                if mount.Clients.Length > 0 {
                     // The mount got a new client while waiting, ignore it.
                     logger.Printf("%s:collection aborted:", mount.Mount)
                     continue
@@ -139,7 +139,7 @@ func (self *Manager) ProcessClients() {
                 if active_hash != meta_hash {
                     // This means it's one of the other clients sending metadata
                     // Save the metadata for them for when the Active client leaves
-                    if client, ok := mount.Clients[meta_hash]; ok {
+                    if client, ok := mount.Clients.GetByHash(meta_hash); ok {
                         client.Metadata = meta.Data
                     } else {
                         // We don't seem to have an actual client connected with
@@ -153,7 +153,7 @@ func (self *Manager) ProcessClients() {
                 // special for this case, just send it along to icecast and save the
                 // metadata in the Client struct.
                 
-                client, ok := mount.Clients[active_hash]
+                client, ok := mount.Clients.GetByHash(active_hash)
                 
                 if !ok {
                     // We... don't seem to have the active client?
@@ -259,7 +259,7 @@ func (self *Manager) RemoveClient(client *Client) {
             select {
                 case mount.Active = <-mount.ClientQueue:
                                 
-                    c, ok := mount.Clients[mount.Active.Hash()]
+                    c, ok := mount.Clients.GetByID(mount.Active)
                     if !ok || c.ClientID != mount.Active {
                         // Make sure we have the actual correct client, this
                         // also ok's if the client reconnected quickly.
@@ -283,13 +283,13 @@ func (self *Manager) RemoveClient(client *Client) {
                     mount.Active.Name)
     }
     
-    // Remove it from the mount map, this is our first action
-    delete(mount.Clients, client.ClientID.Hash())
+    // Remove it from the mount map.
+    mount.Clients.Remove(client)
     
     // We have to close the connection ourself since we Hijacked it
     client.Conn.Close()
     
-    if len(mount.Clients) == 0 {
+    if mount.Clients.Length == 0 {
         // Register the mount for a collection, we don't collect it here
         // right away because it's common for two sources to overlap or
         // swap each other out with a very small delay. This gives it a
@@ -327,7 +327,7 @@ func (self *Manager) AddClient(client *Client) (err error) {
         self.Mounts[mountName] = mount
         
         // Add our new client
-        mount.Clients[client.ClientID.Hash()] = client
+        mount.Clients.Add(client)
         
         // Since this is a new mount we can set the just added
         // stream as active
@@ -357,7 +357,7 @@ func (self *Manager) AddClient(client *Client) (err error) {
         return nil
     }
     // Mount already exists so all we have to do is add our new client to it.
-    mount.Clients[client.ClientID.Hash()] = client
+    mount.Clients.Add(client)
     
     // We want to make sure we don't deadlock if the client queue is full already.
     if len(mount.ClientQueue) < config.QUEUE_LIMIT {

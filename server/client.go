@@ -1,12 +1,14 @@
 package server
 
 import (
+    "sync/atomic"
     "bufio"
     "io"
     "net"
     "hash/fnv"
     "strings"
     "github.com/Wessie/icecast-proxy-go/http"
+    
 )
 
 /* LoginStatus is an error returned when anything goes wrong in the
@@ -134,4 +136,84 @@ func NewClient(conn net.Conn, bufrw *bufio.ReadWriter,
     
     new := Client{clientID, "", bufrw, conn}
     return &new
+}
+
+/*
+Container that makes it easier to handle fuzzy and exact matching
+when it comes to clients. Since we don't want to clutter logic code
+with this we do it all in a special type
+*/
+type ClientContainer struct {
+    // A map that has the ClientHash as key.
+    byHash map[ClientHash] *Client
+    // A map that has the ClientID pointer as key.
+    byID map[*ClientID] *Client
+    // The current amount of clients in the container
+    Length int32
+}
+
+/*
+Gets a client from the container by the hash key
+
+*/
+func (self *ClientContainer) GetByHash(hash ClientHash) (client *Client, ok bool) {
+    for id, client := range self.byID {
+        if id.Hash() == hash {
+            return client, true
+        }
+    }
+    return nil, false
+}
+
+/*
+Gets a client from the container by the ClientID pointer key
+
+*/
+func (self *ClientContainer) GetByID(id *ClientID) (client *Client, ok bool) {
+    client, ok = self.byID[id]
+    return client, ok
+}
+
+/*
+Adds a client to the container.
+
+This method is not thread-safe.
+*/
+func (self *ClientContainer) Add(client *Client) {
+    self.byID[client.ClientID] = client
+    atomic.AddInt32(&self.Length, 1)
+}
+
+/*
+Removes a client from the container.
+
+This method is not thread-safe.
+*/
+func (self *ClientContainer) Remove(client *Client) {
+    delete(self.byID, client.ClientID)
+    atomic.AddInt32(&self.Length, -1)
+}
+
+/*
+Creates and returns a new ClientContainer
+
+*/
+func NewClientContainer() *ClientContainer {
+    container := ClientContainer{}
+    container.byID = make(map[*ClientID] *Client, 5)
+    container.Length = 0
+    return &container
+}
+
+/*
+Closes all connections and then returns
+
+*/
+func (self *ClientContainer) Destroy() {
+    // Yes we don't remove anything from the actual internal mapping.
+    // Why? Because we assume the whole structure is going to be garbage
+    // collected very soon since we are wished death.
+    for _, client := range self.byID {
+        client.Conn.Close()
+    }
 }

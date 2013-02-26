@@ -9,7 +9,7 @@ type Mount struct {
     // The queue of clients
     ClientQueue chan *ClientID
     // A mapping from identifiers to known source clients
-    Clients map[ClientHash] *Client
+    Clients *ClientContainer
     // The currently active client on the stream
     Active *ClientID
     // The mount we are representing.
@@ -19,7 +19,7 @@ type Mount struct {
 }
 
 func NewMount(mount string) *Mount {
-    clients := make(map[ClientHash] *Client, 5)
+    clients := NewClientContainer()
     
     queue := make(chan *ClientID, config.QUEUE_LIMIT)
     
@@ -35,9 +35,7 @@ func NewMount(mount string) *Mount {
 func DestroyMount(self *Mount) {
     shout.DestroyShout(*self.Shout)
     
-    for _, client := range self.Clients {
-        client.Conn.Close()
-    }
+    self.Clients.Destroy()
 }
 
 type FullQueue struct {}
