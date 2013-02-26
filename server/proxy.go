@@ -67,6 +67,10 @@ func (self *Manager) ProcessClients() {
                 self.RemoveClient(err.Client)
                 // We should log the error here
                 // TODO: Add logging
+                logger.Printf(":remove client:%s: %s (reason: '%s')",
+                             err.Client.ClientID.Mount,
+                             err.Client.String(),
+                             err.Err.Error())
             case client := <-self.Receiver:
                 // A new client, let a different function handle
                 // the preparations required.
@@ -76,6 +80,8 @@ func (self *Manager) ProcessClients() {
                     // This means something is bad, reject the client.
                     self.RemoveClient(client)
                     // TODO: Add logging
+                    logger.Printf(":error adding client: %s (reason: %s)",
+                                  client.String(), err.Error())
                 } else {
                     // We are done preparing, start reading.
                     go ReadInto(client, dataChan, errChan)
@@ -83,17 +89,17 @@ func (self *Manager) ProcessClients() {
             case mount := <-self.MountCollector:
                 // The mount is 'empty' we have to do some checks and clean up
                 // if neccesary
-                logger.Printf("%s:collecting:", mount.Mount)
+                logger.Printf(":collecting mount: %s", mount.Mount)
                 
                 if mount.Clients.Length > 0 {
                     // The mount got a new client while waiting, ignore it.
-                    logger.Printf("%s:collection aborted:", mount.Mount)
+                    logger.Printf(":collection aborted: %s", mount.Mount)
                     continue
                 }
                 // no new clients so we have to clean it up.
                 
                 // Close our connection to the server
-                logger.Printf("%s:icecast disconnect:", mount.Mount)
+                logger.Printf(":icecast disconnect: %s", mount.Mount)
                 err := mount.Shout.Close()
                 if err != nil {
                     // Log the error but don't do anything with it other than that
@@ -107,7 +113,7 @@ func (self *Manager) ProcessClients() {
                 // extra help though, the rest will be done by the
                 // garbage collector
                 DestroyMount(mount)
-                logger.Printf("%s:collection finished:", mount.Mount)
+                logger.Printf(":collection finished: %s", mount.Mount)
             case meta := <-self.MetaChan:
                 // Receiving metadata is slightly complicated because our
                 // only method to knowing if something is for a specific
@@ -199,10 +205,10 @@ func (self *Mount) HandleData(data *DataPack) {
         // Do a close call to be sure of no lingering connections.
         self.Shout.Close()
         
-        logger.Printf("%s:icecast connecting:", self.Mount)
+        logger.Printf(":icecast connecting: %s", self.Mount)
         err := self.Shout.Open()
         if err != nil {
-            logger.Printf("%s:icecast error: %s", self.Mount, err.Error())
+            logger.Printf(":icecast error: %s (error: %s)", self.Mount, err.Error())
             // Error occured while connecting, we ditch the data and retry
             // on the next package
             return
@@ -240,10 +246,7 @@ deletion.
 If no clients are left on this mountpoint the mount will be
 cleaned up. */
 func (self *Manager) RemoveClient(client *Client) {
-    
-    logger.Printf("%s:remove client: %s @ %s", client.ClientID.Mount,
-                  client.ClientID.Name, client.ClientID.Addr)
-                  
+  
     mountName := client.ClientID.Mount
     
     mount, ok := self.Mounts[mountName]
@@ -269,18 +272,22 @@ func (self *Manager) RemoveClient(client *Client) {
                     }
                     // We go the easy way out and send the meta into a round trip!
                     self.MetaChan <- &MetaPack{c.Metadata, c.ClientID, false}
+                    
+                    logger.Printf(":switch client:%s: %s -> %s",
+                                  client.ClientID.Mount,
+                                  client.ClientID.Name,
+                                  c.ClientID.Name)
                     // And don't forget to break out of our little loop
                     break client_for_loop
                 default:
                     // Default clause so that the select doesn't hang.
                     // Removing this is equal to deathlocking, don't!
                     // We have no clients left on the queue.. break the loop
+                    logger.Printf(":last client:%s: %s -> Empty",
+                                  client.ClientID.Mount, client.ClientID.Name)
                     break client_for_loop
             }
         }
-        logger.Printf("%s:switch client: %s -> %s",
-                    client.ClientID.Mount, client.ClientID.Name,
-                    mount.Active.Name)
     }
     
     // Remove it from the mount map.
@@ -310,7 +317,7 @@ func (self *Manager) AddClient(client *Client) (err error) {
         }
     }()
     
-    logger.Printf("%s:new client: %s @ %s", client.ClientID.Mount,
+    logger.Printf(":new client:%s: %s @ %s", client.ClientID.Mount,
                   client.ClientID.Name, client.ClientID.Addr)
                   
     mountName := client.ClientID.Mount
@@ -318,7 +325,7 @@ func (self *Manager) AddClient(client *Client) (err error) {
     mount, ok := self.Mounts[mountName]
     
     if !ok {
-        logger.Printf("%s:new mount:", client.ClientID.Mount)
+        logger.Printf(":new mount: %s", client.ClientID.Mount)
         
         // We don't have a mount yet so we create our own
         mount := NewMount(mountName)

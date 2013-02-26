@@ -2,6 +2,7 @@ package server
 
 import (
     "sync/atomic"
+    "fmt"
     "bufio"
     "io"
     "net"
@@ -129,6 +130,13 @@ type Client struct {
     Bufrw *bufio.ReadWriter
     // The raw connection socket
     Conn net.Conn
+}
+
+/* Returns a pretty string that contains information about the client.
+Especially handy in logging and debugging */
+func (self *Client) String() string {
+    return fmt.Sprintf("[%p] %s@%s",
+                self, self.ClientID.Name, self.ClientID.Addr)
 }
 
 func NewClient(conn net.Conn, bufrw *bufio.ReadWriter,
