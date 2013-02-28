@@ -142,6 +142,8 @@ func Initialize() {
     Init_auth()
 
     mux := http.NewServeMux()
+    // We don't use the real functionality of the Muxer because we require to
+    // differentiate between GET/POST and SOURCE requests.
     mux.HandleFunc("/", mainHandler)
 
     server := http.Server{Addr: config.ServerAddress,

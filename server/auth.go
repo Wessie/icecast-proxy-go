@@ -17,6 +17,7 @@ import (
 
 var database *sql.DB
 var receiveCredentials *sql.Stmt
+var getAllCredentials *sql.Stmt
 
 /*
 We don't want to continue the executation at all if the database
@@ -34,13 +35,149 @@ func Init_auth() {
         if err != nil {
             panic(err)
         }
+        getAllCredentials, err = database.Prepare("SELECT LOWER(user), pass, privileges FROM users;")
+        if err != nil {
+            panic(err)
+        }
     }
 }
 
+/* userInfo contains relevant information we want to cache */
+type userInfo struct {
+    Pwd string
+    Perm Permission
+}
+
+func newUserInfo(pwd string, perm Permission) *userInfo {
+    return &userInfo{pwd, perm}
+}
+
+/* UserCache embeds a map type with handy methods to fetch items */
+type UserCache struct {
+    cache map[string] *userInfo
+}
+
+func (self *UserCache) LoadAll() (err error) {
+    // Start a database transaction
+    transaction, err := database.Begin()
+    if err != nil {
+        // A database error.. most likely this is a DB down error.
+        // Log the case and reject the login
+        // TODO: Logging
+        return LOGIN_ERR_REJECTED
+    }
+    
+    // Use a prepared statement with the transaction.
+    rows, err := transaction.Stmt(getAllCredentials).Query()
+    
+    if err != nil {
+        return err
+    }
+    
+    for rows.Next() {
+        var user string
+        var hash string
+        var temp_perm int
+        err = rows.Scan(&user, &hash, &temp_perm)
+        
+        perm := NewPermission(temp_perm)
+        self.cache[user] = newUserInfo(hash, perm)
+    }
+    
+    return nil
+}
+
+/* Function that returns a copy from the cache or tries retrieving it from
+the database if not in the cache. This does no actual authentication checking
+*/
+func (self *UserCache) Fetch(user string) (hash string, perm Permission, err error) {
+    if value, ok := self.cache[user]; ok {
+        return value.Pwd, value.Perm, nil
+    }
+    
+    // It's not in the cache.. do an update
+    return self.FetchUpdate(user)
+}
+
+func (self *UserCache) FetchUpdate(user string) (hash string, perm Permission, err error) {
+    // Start a database transaction
+    transaction, err := database.Begin()
+    if err != nil {
+        // A database error.. most likely this is a DB down error.
+        // Log the case and reject the login
+        // TODO: Logging
+        err = LOGIN_ERR_REJECTED
+        return
+    }
+    
+    // Use a prepared statement with the transaction.
+    row := transaction.Stmt(receiveCredentials).QueryRow(user)
+    
+    var temp_perm int
+    err = row.Scan(&hash, &temp_perm)
+    
+    if err == sql.ErrNoRows {
+        err = LOGIN_ERR_REJECTED
+        return
+    } else if err != nil {
+        // Unexpected error happened?
+        // TODO: Logging
+        err = LOGIN_ERR_REJECTED
+        return
+    }
+    
+    perm = NewPermission(temp_perm)
+
+    self.cache[user] = newUserInfo(hash, perm)
+    
+    return
+}
+
+func (self *UserCache) Login(client *ClientID) (err error) {
+    hash, perm, err := self.Fetch(client.Name)
+    if err != nil {
+        // We got an error back from the fetch... lets just assume a rejection
+        return LOGIN_ERR_REJECTED
+    }
+    
+    if bcrypt.Match(client.Pass, hash) {
+        // Don't forget to set the permission on the client object
+        client.Perm = perm
+        return nil
+    }
+    
+    // Ok well.. that is awkward.. either the cached version was wrong or...
+    // the actual password differs totally. Lets try updating our cache first
+    hash, perm, err = self.FetchUpdate(client.Name)
+    if err != nil {
+        // Same as above, assume a rejection reason
+        return LOGIN_ERR_REJECTED
+    }
+    
+    if bcrypt.Match(client.Pass, hash) {
+        // Don't forget to.. set the permission
+        client.Perm = perm
+        return nil
+    }
+    
+    // Well.. that means the password is just plain wrong! REJECTED
+    return LOGIN_ERR_REJECTED
+}
+
+/* Returns a new initialized UserCache, this does not pre-load the cache.
+Call UserCache.LoadAll() for loading everything into the cache */
+func NewUserCache() *UserCache {
+    cache := &UserCache{}
+    cache.cache = make(map[string] *userInfo, 30)
+    return cache
+}
 
 /* The realm used and send to the user browser when trying to access
 the HTTP pages. */
 var realm = "R/a/dio"
+/* A cache that keeps passwords and usernames in a mapping, this reduces
+database hits */
+var user_cache = NewUserCache()
 
 func (self *ClientID) Login() (err error) {
     /* Logs in an user */
@@ -65,50 +202,7 @@ func (self *ClientID) Login() (err error) {
         return nil
     }
     
-    /* Continue like normal here */
-
-    // Start a database transaction
-    transaction, err := database.Begin()
-    if err != nil {
-        // A database error.. most likely this is a DB down error.
-        // Log the case and reject the login
-        // TODO: Logging
-        return LOGIN_ERR_REJECTED
-    }
-    
-    // Use a prepared statement with the transaction.
-    row := transaction.Stmt(receiveCredentials).QueryRow(self.Name)
-    
-    var hash string
-    var perm int
-    err = row.Scan(&hash, &perm)
-    
-    if err == sql.ErrNoRows {
-        return LOGIN_ERR_REJECTED
-    } else if err != nil {
-        // Unexpected error happened?
-        // TODO: Logging
-        return LOGIN_ERR_REJECTED
-    }
-    
-    /* We are in the clear, lets check out if we have the correct password */
-    if bcrypt.Match(self.Pass, hash) {
-        switch perm {
-            case 5:
-                fallthrough
-            case 4:
-                self.Perm = PERM_ADMIN
-            case 3:
-                fallthrough
-            case 2:
-                self.Perm = PERM_SOURCE
-            default:
-                self.Perm = PERM_NONE
-        }
-        return nil
-    }
-    
-    return LOGIN_ERR_REJECTED
+    return user_cache.Login(self)
 }
 
 func ParseDigest(r *http.Request) (username string, password string) {

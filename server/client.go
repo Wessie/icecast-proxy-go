@@ -47,6 +47,22 @@ const (
     PERM_ADMIN // Admin access, can do anything
 )
 
+func NewPermission(perm int) Permission {
+    switch perm {
+        case 5:
+            fallthrough
+        case 4:
+            return PERM_ADMIN
+        case 3:
+            fallthrough
+        case 2:
+            return PERM_SOURCE
+        default:
+            return PERM_NONE
+    }
+    return PERM_NONE
+}
+
 /* 
 A struct that identifies a specific client and mount
 
