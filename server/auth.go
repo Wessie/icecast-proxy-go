@@ -9,7 +9,7 @@ import (
 
 // For authentication access
 import (
-    "github.com/jameskeane/bcrypt"
+    "code.google.com/p/go.crypto/bcrypt"
     "database/sql"
     _ "github.com/Go-SQL-Driver/MySQL"
 
@@ -142,7 +142,7 @@ func (self *UserCache) Login(client *ClientID) (err error) {
         return LOGIN_ERR_REJECTED
     }
     
-    if bcrypt.Match(client.Pass, hash) {
+    if bcrypt.CompareHashAndPassword([]byte(client.Pass), []byte(hash)) == nil {
         // Don't forget to set the permission on the client object
         client.Perm = perm
         return nil
@@ -156,7 +156,7 @@ func (self *UserCache) Login(client *ClientID) (err error) {
         return LOGIN_ERR_REJECTED
     }
     
-    if bcrypt.Match(client.Pass, hash) {
+    if bcrypt.CompareHashAndPassword([]byte(client.Pass), []byte(hash)) == nil {
         // Don't forget to.. set the permission
         client.Perm = perm
         return nil
