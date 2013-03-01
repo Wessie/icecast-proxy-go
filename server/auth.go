@@ -142,7 +142,7 @@ func (self *UserCache) Login(client *ClientID) (err error) {
         return LOGIN_ERR_REJECTED
     }
     
-    if bcrypt.CompareHashAndPassword([]byte(client.Pass), []byte(hash)) == nil {
+    if bcrypt.CompareHashAndPassword([]byte(hash), []byte(client.Pass)) == nil {
         // Don't forget to set the permission on the client object
         client.Perm = perm
         return nil
@@ -156,7 +156,7 @@ func (self *UserCache) Login(client *ClientID) (err error) {
         return LOGIN_ERR_REJECTED
     }
     
-    if bcrypt.CompareHashAndPassword([]byte(client.Pass), []byte(hash)) == nil {
+    if bcrypt.CompareHashAndPassword([]byte(hash), []byte(client.Pass)) == nil {
         // Don't forget to.. set the permission
         client.Perm = perm
         return nil
