@@ -91,6 +91,7 @@ func (self *UserCache) LoadAll() (err error) {
 the database if not in the cache. This does no actual authentication checking
 */
 func (self *UserCache) Fetch(user string) (hash string, perm Permission, err error) {
+    user = strings.ToLower(user)
     if value, ok := self.cache[user]; ok {
         return value.Pwd, value.Perm, nil
     }
@@ -100,6 +101,7 @@ func (self *UserCache) Fetch(user string) (hash string, perm Permission, err err
 }
 
 func (self *UserCache) FetchUpdate(user string) (hash string, perm Permission, err error) {
+    user = strings.ToLower(user)
     // Start a database transaction
     transaction, err := database.Begin()
     if err != nil {
