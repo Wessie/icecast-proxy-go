@@ -14,11 +14,15 @@ var Config *yaml.File
 var configFile string
 var Authentication bool = true
 var ServerAddress = ":"
+var CpuProfile string
+var MemoryProfile string
 
 
 func init() {
     flag.StringVar(&configFile, "c", "proxy.yaml", "Configuration file path.")
     flag.BoolVar(&Authentication, "auth", true, "False if authentication should be disabled")
+    flag.StringVar(&CpuProfile, "cpuprofile", "", "Write CPU profile to file")
+    flag.StringVar(&MemoryProfile, "memoryprofile", "", "Write Memory profile to file")
     flag.Parse()
     Config = yaml.ConfigFile(configFile)
     
