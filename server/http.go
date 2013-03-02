@@ -1,5 +1,15 @@
 package server
 
+/*
+Implements the HTTP handlers for the icecast server.
+
+This file contains all HTTP handlers and their respective needs.
+The actual icecast data handling is done in the 'icecast.go' file.
+
+while this file does a relatively big part of the icecast protocol it should
+try to do as little as possible when it comes to the protocol.
+*/
+
 import (
     "github.com/Wessie/icecast-proxy-go/http"
     "github.com/Wessie/icecast-proxy-go/config"
@@ -8,23 +18,21 @@ import (
     "strconv"
 )
 
-
-
+/*
+adminHandler is called whenever the /admin URL is requested. The two URLs
+special cased for metadata and listener listing respectively are not included
+and are handled by different handlers.
+*/
 func adminHandler(w http.ResponseWriter, r *http.Request, clientID *ClientID) {
-    /* Creates admin panel access to the proxy. 
-
-    There are two URLs special cased that only require source level
-    permission. These are the two required for source metadata (mp3 only)
-    and mount information. Used by some source clients.
-    */
     return
 }
 
+/*
+The root handler of the server, this handler exists because we have
+to determine if something is a SOURCE request or a GET request before
+sending it to the correct handler.
+*/
 func mainHandler(w http.ResponseWriter, r *http.Request) {
-    /* The root handler of the server, this handler has to determine
-    if something is a valid mount (and has to pass to the sourceHandler)
-    or is a different valid or invalid URL. 
-    */
     if r.Method == "SOURCE" {
         /* This is a new icecast source, pass it to the separate handler */
         makeAuthHandler(sourceHandler, PERM_SOURCE)(w, r)
@@ -101,6 +109,10 @@ func metadataHandler(w http.ResponseWriter, r *http.Request,
     w.Write(response)
 }
 
+/*
+sourceHandler is the handler for icecast source clients. It acknowledges the
+client before sending it over to the icecast manager.
+*/
 func sourceHandler(w http.ResponseWriter, r *http.Request, clientID *ClientID) {
     /* Handler for icecast source requests. This can only be called by
     authenticated requests */
