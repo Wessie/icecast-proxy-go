@@ -3,6 +3,7 @@ package server
 import (
     "github.com/Wessie/icecast-proxy-go/config"
     "github.com/Wessie/icecast-proxy-go/shout"
+    "github.com/Wessie/icecast-proxy-go/handlers"
     "time"
     "log"
     "os"
@@ -83,6 +84,10 @@ func (self *Manager) ProcessClients() {
                     logger.Printf(":error adding client: %s (reason: %s)",
                                   client.String(), err.Error())
                 } else {
+                    // Send the client to the handler, we don't want to send it
+                    // earlier than this since it could mean there are errors
+                    // when pre-processing it.
+                    handlers.HandleClientConnect(client)
                     // We are done preparing, start reading.
                     go ReadInto(client, dataChan, errChan)
                 }
@@ -147,6 +152,9 @@ func (self *Manager) ProcessClients() {
                     // Save the metadata for them for when the Active client leaves
                     if client, ok := mount.Clients.GetByHash(meta_hash); ok {
                         client.Metadata = meta.Data
+                        
+                        // Don't forget to call our handler
+                        handlers.HandleMetadata(client, meta.Data)
                     } else {
                         // We don't seem to have an actual client connected with
                         // this specific identifier... Discard?
@@ -181,6 +189,11 @@ func (self *Manager) ProcessClients() {
                         meta.Seen = true
                         self.MetaChan <- meta
                     }()
+                    
+                    // Call our handler for metadata, we do it here since we
+                    // already verified the metadata is fine for sending, there
+                    // is no need to wait out the extra second.
+                    handlers.HandleMetadata(client, meta.Data)
                 }
             case <-metaStoreTicker:
                 // We store metadata for unknown mounts in this mapping.
@@ -240,6 +253,63 @@ func (self *Mount) HandleData(data *DataPack) {
     }
 }
 
+/*
+Swaps the current active client with the new client.
+*/
+func (self *Manager) SwapLiveClient(mount *Mount, client *Client) {
+    if mount.Active == client.ClientID {
+        // The new client is already the active client.
+        return
+    }
+
+    // We want to call the handler before swapping them out after all!
+    old_live_client, ok := mount.Clients.GetByID(mount.Active)
+    if !ok {
+        // This shouldn't ever happen! oh boy did we do this before.
+        // Set the variable to nil so we can check it later.
+        old_live_client = nil
+    }
+    
+    mount.Active = client.ClientID
+    
+    // Call the handlers, the order doesn't really matter
+    // Lets first make sure we aren't sending a nil pointer.
+    if old_live_client != nil {
+        handlers.HandleClientUnlive(old_live_client)
+    }
+    
+    handlers.HandleClientLive(client)
+    
+    // We found a new client we can switch to. Lets continue the
+    // work needed, such as saved metadata.
+    self.MetaChan <- &MetaPack{new_client.Metadata,
+                               new_client.ClientID,
+                               false}
+}
+/*
+Switches to the next available client, this uses the Mount.ClientQueue
+for determining what the next client shall be.
+*/
+func (self *Manager) NextLiveClient(mount *Mount, client *Client) {
+    client_loop: for {
+        select {
+            case new_id := <-mount.ClientQueue:
+                new_client, ok := mount.Clients.GetByID(new_id)
+                if !ok || new_client.ClientID != new_id {
+                    // We seem to have hit an old client. Get rid of it.
+                    continue
+                }
+                
+                // Swap the clients out.
+                SwapLiveClient(mount, new_client)
+                                           
+                break client_loop
+            default:
+                break client_loop
+        }
+    }
+}
+    
 /* Removes a client from the mount point and prepares it for
 deletion.
 
@@ -256,45 +326,21 @@ func (self *Manager) RemoveClient(client *Client) {
     }
     
     if mount.Active == client.ClientID {
-        // First swap out the active client if we have another client
-        // connected already.
-        client_for_loop: for {
-            select {
-                case mount.Active = <-mount.ClientQueue:
-                                
-                    c, ok := mount.Clients.GetByID(mount.Active)
-                    if !ok || c.ClientID != mount.Active {
-                        // Make sure we have the actual correct client, this
-                        // also ok's if the client reconnected quickly.
-                        continue
-                        // Why are we switching to this client if the client doesn't exist?
-                        // Ah well just ignore it
-                    }
-                    // We go the easy way out and send the meta into a round trip!
-                    self.MetaChan <- &MetaPack{c.Metadata, c.ClientID, false}
-                    
-                    logger.Printf(":switch client:%s: %s -> %s",
-                                  client.ClientID.Mount,
-                                  client.ClientID.Name,
-                                  c.ClientID.Name)
-                    // And don't forget to break out of our little loop
-                    break client_for_loop
-                default:
-                    // Default clause so that the select doesn't hang.
-                    // Removing this is equal to deathlocking, don't!
-                    // We have no clients left on the queue.. break the loop
-                    logger.Printf(":last client:%s: %s -> Empty",
-                                  client.ClientID.Mount, client.ClientID.Name)
-                    break client_for_loop
-            }
-        }
+        // Put the next available client live
+        self.NextLiveClient(mount, client)
     }
+    
     
     // Remove it from the mount map.
     mount.Clients.Remove(client)
     
     // We have to close the connection ourself since we Hijacked it
     client.Conn.Close()
+    
+    // This currently is the most logical place to call this since we can
+    // be sure the connection is already closed at this point, and thus avoid
+    // some potential problems in the handlers.
+    handlers.HandleClientDisconnect(client)
     
     if mount.Clients.Length == 0 {
         // Register the mount for a collection, we don't collect it here
