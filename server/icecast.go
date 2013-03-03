@@ -3,7 +3,6 @@ package server
 import (
     "github.com/Wessie/icecast-proxy-go/config"
     "github.com/Wessie/icecast-proxy-go/shout"
-    "github.com/Wessie/icecast-proxy-go/handlers"
     "time"
     "log"
     "os"
@@ -87,7 +86,7 @@ func (self *Manager) ProcessClients() {
                     // Send the client to the handler, we don't want to send it
                     // earlier than this since it could mean there are errors
                     // when pre-processing it.
-                    handlers.HandleClientConnect(client)
+                    HandleClientConnect(client)
                     // We are done preparing, start reading.
                     go ReadInto(client, dataChan, errChan)
                 }
@@ -154,7 +153,7 @@ func (self *Manager) ProcessClients() {
                         client.Metadata = meta.Data
                         
                         // Don't forget to call our handler
-                        handlers.HandleMetadata(client, meta.Data)
+                        HandleMetadata(client, meta.Data)
                     } else {
                         // We don't seem to have an actual client connected with
                         // this specific identifier... Discard?
@@ -193,7 +192,7 @@ func (self *Manager) ProcessClients() {
                     // Call our handler for metadata, we do it here since we
                     // already verified the metadata is fine for sending, there
                     // is no need to wait out the extra second.
-                    handlers.HandleMetadata(client, meta.Data)
+                    HandleMetadata(client, meta.Data)
                 }
             case <-metaStoreTicker:
                 // We store metadata for unknown mounts in this mapping.
@@ -275,17 +274,18 @@ func (self *Manager) SwapLiveClient(mount *Mount, client *Client) {
     // Call the handlers, the order doesn't really matter
     // Lets first make sure we aren't sending a nil pointer.
     if old_live_client != nil {
-        handlers.HandleClientUnlive(old_live_client)
+        HandleClientUnlive(old_live_client)
     }
     
-    handlers.HandleClientLive(client)
+    HandleClientLive(client)
     
     // We found a new client we can switch to. Lets continue the
     // work needed, such as saved metadata.
-    self.MetaChan <- &MetaPack{new_client.Metadata,
-                               new_client.ClientID,
+    self.MetaChan <- &MetaPack{client.Metadata,
+                               client.ClientID,
                                false}
 }
+
 /*
 Switches to the next available client, this uses the Mount.ClientQueue
 for determining what the next client shall be.
@@ -301,7 +301,7 @@ func (self *Manager) NextLiveClient(mount *Mount, client *Client) {
                 }
                 
                 // Swap the clients out.
-                SwapLiveClient(mount, new_client)
+                self.SwapLiveClient(mount, new_client)
                                            
                 break client_loop
             default:
@@ -340,7 +340,7 @@ func (self *Manager) RemoveClient(client *Client) {
     // This currently is the most logical place to call this since we can
     // be sure the connection is already closed at this point, and thus avoid
     // some potential problems in the handlers.
-    handlers.HandleClientDisconnect(client)
+    HandleClientDisconnect(client)
     
     if mount.Clients.Length == 0 {
         // Register the mount for a collection, we don't collect it here
