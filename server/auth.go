@@ -11,7 +11,7 @@ import (
 import (
     "code.google.com/p/go.crypto/bcrypt"
     "database/sql"
-    _ "github.com/Go-SQL-Driver/MySQL"
+    _ "github.com/go-sql-driver/mysql"
 
 )
 
