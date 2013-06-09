@@ -5,6 +5,7 @@ import (
     "github.com/Wessie/icecast-proxy-go/http"
     "strings"
     "encoding/base64"
+    "time"
 )
 
 // For authentication access
@@ -15,6 +16,7 @@ import (
 
 )
 
+var CACHE_TTL time.Duration = time.Minute * 5
 var database *sql.DB
 var receiveCredentials *sql.Stmt
 var getAllCredentials *sql.Stmt
@@ -46,10 +48,15 @@ func Init_auth() {
 type userInfo struct {
     Pwd string
     Perm Permission
+    last time.Time
 }
 
 func newUserInfo(pwd string, perm Permission) *userInfo {
-    return &userInfo{pwd, perm}
+    return &userInfo{
+        Pwd: pwd,
+        Perm: perm,
+        last: time.Now(),
+    }
 }
 
 /* UserCache embeds a map type with handy methods to fetch items */
@@ -102,6 +109,12 @@ func (self *UserCache) Fetch(user string) (hash string, perm Permission, err err
 
 func (self *UserCache) FetchUpdate(user string) (hash string, perm Permission, err error) {
     user = strings.ToLower(user)
+    // Check our cache timeout
+    if value, ok := self.cache[user]; ok {
+        if time.Now().Sub(value.last) < CACHE_TTL {
+            return value.Pwd, value.Perm, nil
+        }
+    }
     // Start a database transaction
     transaction, err := database.Begin()
     if err != nil {
