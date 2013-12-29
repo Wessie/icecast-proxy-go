@@ -50,7 +50,7 @@ type UserCache struct {
 }
 
 func (self *UserCache) LoadAll() (err error) {
-    file, err := os.Open(authentication_filename)
+    file, err := os.Open(config.AuthFile)
     if err != nil {
         log.Fatal("Could not load authentication file.")
     }

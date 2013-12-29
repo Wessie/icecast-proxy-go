@@ -12,6 +12,7 @@ const Timeout = time.Second * 5
 
 var Config *yaml.File
 var configFile string
+var AuthFile string
 var Authentication bool = true
 var ServerAddress = ":"
 var CpuProfile string
@@ -20,6 +21,7 @@ var MemoryProfile string
 
 func init() {
     flag.StringVar(&configFile, "c", "proxy.yaml", "Configuration file path.")
+    flag.StringVar(&AuthFile, "ac", "auth.txt", "Authentication file path.")
     flag.BoolVar(&Authentication, "auth", true, "False if authentication should be disabled")
     flag.StringVar(&CpuProfile, "cpuprofile", "", "Write CPU profile to file")
     flag.StringVar(&MemoryProfile, "memoryprofile", "", "Write Memory profile to file")
