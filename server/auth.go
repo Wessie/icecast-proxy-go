@@ -5,44 +5,21 @@ import (
     "github.com/Wessie/icecast-proxy-go/http"
     "strings"
     "encoding/base64"
+    "strconv"
+    "bufio"
     "time"
+    "log"
+    "os"
 )
 
 // For authentication access
 import (
     "code.google.com/p/go.crypto/bcrypt"
-    "database/sql"
-    _ "github.com/go-sql-driver/mysql"
-
 )
 
 var CACHE_TTL time.Duration = time.Minute * 5
-var database *sql.DB
-var receiveCredentials *sql.Stmt
-var getAllCredentials *sql.Stmt
-
-/*
-We don't want to continue the executation at all if the database
-connection is down or broken. Thus we panic to let the user notice
-this very quickly
-*/
-func Init_auth() {
-    var err error
-    if config.Authentication {
-        database, err = sql.Open("mysql", config.CreateDatabaseDSN())
-        if err != nil {
-            panic(err)
-        }
-        receiveCredentials, err = database.Prepare("SELECT pass, privileges FROM users WHERE LOWER(user)=LOWER(?) LIMIT 1;")
-        if err != nil {
-            panic(err)
-        }
-        getAllCredentials, err = database.Prepare("SELECT LOWER(user), pass, privileges FROM users;")
-        if err != nil {
-            panic(err)
-        }
-    }
-}
+var authentication_filename = "auth.conf"
+var user_cache *UserCache = NewUserCache()
 
 /* userInfo contains relevant information we want to cache */
 type userInfo struct {
@@ -59,36 +36,52 @@ func newUserInfo(pwd string, perm Permission) *userInfo {
     }
 }
 
+func Init_auth() {
+    user_cache = NewUserCache()
+
+    if err := user_cache.LoadAll(); err != nil {
+        panic(err)
+    }
+}
+
 /* UserCache embeds a map type with handy methods to fetch items */
 type UserCache struct {
     cache map[string] *userInfo
 }
 
 func (self *UserCache) LoadAll() (err error) {
-    // Start a database transaction
-    transaction, err := database.Begin()
+    file, err := os.Open(authentication_filename)
     if err != nil {
-        // A database error.. most likely this is a DB down error.
-        // Log the case and reject the login
-        // TODO: Logging
-        return LOGIN_ERR_REJECTED
+        log.Fatal("Could not load authentication file.")
     }
     
-    // Use a prepared statement with the transaction.
-    rows, err := transaction.Stmt(getAllCredentials).Query()
+    scanner := bufio.NewScanner(file)
+    scanner.Split(bufio.ScanWords)
     
-    if err != nil {
-        return err
-    }
+    var user, hash string
+    var priv Permission
     
-    for rows.Next() {
-        var user string
-        var hash string
-        var temp_perm int
-        err = rows.Scan(&user, &hash, &temp_perm)
+    for scans := 0; scanner.Scan(); scans++ {
+        switch scans {
+        case 0:
+            user = scanner.Text()
+        case 1:
+            hash = scanner.Text()
+        case 2:
+            sp := scanner.Text()
+            p, err := strconv.Atoi(sp)
+            if err != nil {
+                p = 2
+            }
+            
+            priv = NewPermission(p)
+        }
         
-        perm := NewPermission(temp_perm)
-        self.cache[user] = newUserInfo(hash, perm)
+        if scans >= 2 {
+            self.cache[user] = newUserInfo(hash, priv)
+            
+            scans = 0
+        }
     }
     
     return nil
@@ -114,37 +107,9 @@ func (self *UserCache) FetchUpdate(user string) (hash string, perm Permission, e
         if time.Now().Sub(value.last) < CACHE_TTL {
             return value.Pwd, value.Perm, nil
         }
-    }
-    // Start a database transaction
-    transaction, err := database.Begin()
-    if err != nil {
-        // A database error.. most likely this is a DB down error.
-        // Log the case and reject the login
-        // TODO: Logging
+    } else {
         err = LOGIN_ERR_REJECTED
-        return
     }
-    
-    // Use a prepared statement with the transaction.
-    row := transaction.Stmt(receiveCredentials).QueryRow(user)
-    
-    var temp_perm int
-    err = row.Scan(&hash, &temp_perm)
-    
-    if err == sql.ErrNoRows {
-        err = LOGIN_ERR_REJECTED
-        return
-    } else if err != nil {
-        // Unexpected error happened?
-        // TODO: Logging
-        err = LOGIN_ERR_REJECTED
-        return
-    }
-    
-    perm = NewPermission(temp_perm)
-
-    self.cache[user] = newUserInfo(hash, perm)
-    
     return
 }
 
@@ -190,9 +155,7 @@ func NewUserCache() *UserCache {
 /* The realm used and send to the user browser when trying to access
 the HTTP pages. */
 var realm = "R/a/dio"
-/* A cache that keeps passwords and usernames in a mapping, this reduces
-database hits */
-var user_cache = NewUserCache()
+
 
 func (self *ClientID) Login() (err error) {
     /* Logs in an user */
