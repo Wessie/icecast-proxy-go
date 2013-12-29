@@ -62,6 +62,10 @@ func (self *UserCache) LoadAll() (err error) {
     var priv Permission
     
     for scans := 0; scanner.Scan(); scans++ {
+	if scans >= 3 {
+	    scans = 0
+        }
+
         switch scans {
         case 0:
             user = scanner.Text()
@@ -79,8 +83,6 @@ func (self *UserCache) LoadAll() (err error) {
         
         if scans >= 2 {
             self.cache[user] = newUserInfo(hash, priv)
-            
-            scans = 0
         }
     }
     
