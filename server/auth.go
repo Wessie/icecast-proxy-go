@@ -234,6 +234,10 @@ func ParseDigest(r *http.Request) (username string, password string) {
     }
     
     pair := strings.SplitN(string(decoded), ":", 2)
+
+    if len(pair) != 2 {
+        return
+    }
     
     username, password = pair[0], pair[1]
     return
