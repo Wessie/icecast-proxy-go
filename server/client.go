@@ -3,12 +3,13 @@ package server
 import (
 	"bufio"
 	"fmt"
-	"github.com/Wessie/icecast-proxy-go/http"
 	"hash/fnv"
 	"io"
 	"net"
 	"strings"
 	"sync/atomic"
+
+	"github.com/Wessie/icecast-proxy-go/http"
 )
 
 /* LoginStatus is an error returned when anything goes wrong in the
@@ -58,7 +59,6 @@ func NewPermission(perm int) Permission {
 	default:
 		return PERM_NONE
 	}
-	return PERM_NONE
 }
 
 /*
