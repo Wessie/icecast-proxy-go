@@ -12,7 +12,7 @@ import (
 import (
 	"database/sql"
 
-	"https://golang.org/x/crypto/bcrypt"
+	"golang.org/x/crypto/bcrypt"
 	_ "github.com/go-sql-driver/mysql"
 )
 
