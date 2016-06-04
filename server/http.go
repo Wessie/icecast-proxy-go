@@ -13,10 +13,49 @@ try to do as little as possible when it comes to the protocol.
 import (
 	"github.com/Wessie/icecast-proxy-go/config"
 	"github.com/Wessie/icecast-proxy-go/http"
+	"fmt"
 	"io"
 	"strconv"
 	"time"
 )
+
+var AdminHTML string = `
+<html><head><title>Icecast Proxy</title>
+<style type="text/css">
+table{border: 1px solid #999;border-right:0;border-bottom:0;margin-top:4px;}
+td, th{border-bottom:1px solid #ccc;border-right:1px solid #eee;padding: .2em .5em;}
+form{margin:0;padding:0;}
+</style></head>
+<body>
+<h3>Icecast Proxy</h3>
+%s
+</body></html>
+`
+
+var MountHTML string = `
+<table width="800px" cellspacing="0" cellpadding="2">
+<tr><th align="left" colspan="5">%s</th></tr>
+<tr><th width="80px">Username</th>
+<th>Metadata</th>
+<th width="150px">Useragent</th>
+<th width="50px">Kick</th></tr>
+%s
+</table>
+`
+
+var ClientHTML string = `
+<tr>
+<td>%s &nbsp;</td>
+<td>%s &nbsp;</td>
+<td>%s &nbsp;</td>
+<td>
+<form action="/admin/kick" method="GET">
+<input type="hidden" name="mount" value="%s" />
+<input type="hidden" name="num" value="%d" />
+<input type="submit" value="Kick" %s />
+</form></td></tr>
+`
+
 
 /*
 adminHandler is called whenever the /admin URL is requested. The two URLs
@@ -24,7 +63,35 @@ special cased for metadata and listener listing respectively are not included
 and are handled by different handlers.
 */
 func adminHandler(w http.ResponseWriter, r *http.Request, clientID *ClientID) {
-	return
+	HandlerLock.Lock()
+	if r.URL.Path == "/admin" {
+		Body := ""
+		for mount, clients := range HandlerMounts {
+			MountBody := ""
+			for i, c := range clients {
+				name := c.ClientID.Name
+				if i == 0 {
+					name = fmt.Sprintf("<b>%s</b>", c.ClientID.Name)
+				}
+				ClientBody := fmt.Sprintf(ClientHTML, name, c.Metadata, c.ClientID.Agent, mount, i, "")
+				MountBody = MountBody + ClientBody
+			}
+			Body = Body + fmt.Sprintf(MountHTML, mount, MountBody)
+		}
+		w.Write([]byte(fmt.Sprintf(AdminHTML, Body)))
+	} else if r.URL.Path == "/admin/kick" {
+		MountName := r.URL.Query().Get("mount")
+		Id, err := strconv.Atoi(r.URL.Query().Get("num"))
+		if err == nil {
+			clients, ok := HandlerMounts[MountName]
+			if ok {
+				clients[Id].Conn.Close()
+			}
+		}
+		w.Header().Set("Location", "/admin")
+		w.WriteHeader(301)
+	}
+	HandlerLock.Unlock()
 }
 
 /*
