@@ -2,7 +2,7 @@ package server
 
 import (
 	"log"
-	iconv "github.com/sloonz/go-iconv"
+	iconv "github.com/Wessie/go-iconv"
 )
 
 func ParseMetadata(charset string, meta string) (metadata string) {
