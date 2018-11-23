@@ -16,6 +16,8 @@ import (
 	"io"
 	"strconv"
 	"time"
+	"log"
+	"encoding/hex"
 )
 
 /*
@@ -94,6 +96,8 @@ func metadataHandler(w http.ResponseWriter, r *http.Request,
 		charset = "latin1"
 	}
 
+	log.Printf("\n%s", hex.Dump([]byte(meta)))
+	log.Printf("%s (%s)", meta, charset)
 	// This isn't so much a parser as it is a encoding handler.
 	meta = ParseMetadata(charset, meta)
 
@@ -101,6 +105,8 @@ func metadataHandler(w http.ResponseWriter, r *http.Request,
 	if meta != "" {
 		// And we are done here, send the data we have so far along
 		ClientManager.MetaChan <- &MetaPack{Data: meta, ID: clientID, Seen: false}
+	} else {
+		log.Printf("empty metadata")
 	}
 
 	response := []byte("<?xml version=\"1.0\"?>\n<iceresponse><message>Metadata update successful</message><return>1</return></iceresponse>\n")

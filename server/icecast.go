@@ -127,11 +127,14 @@ func (self *Manager) ProcessClients() {
 			// in the rest of this block.
 			meta_hash := meta.ID.Hash()
 
+			logger.Printf(":metadata:%x: %s", meta_hash, meta.Data)
+
 			mount, ok := self.Mounts[meta.ID.Mount]
 
 			if !ok {
 				// There is no mountpoint known with the name requested by
 				// the one sending the metadata. We save it temporarily.
+				logger.Printf(":metadata stored: %s", meta.Data)
 				self.metaStore[meta_hash] = meta.Data
 				continue
 			}
@@ -155,6 +158,7 @@ func (self *Manager) ProcessClients() {
 				} else {
 					// We don't seem to have an actual client connected with
 					// this specific identifier... Discard?
+					logger.Printf(":metadata discarded: %s", meta.Data)
 					// TODO: Check if discarding isn't needed...
 				}
 				continue
@@ -179,7 +183,9 @@ func (self *Manager) ProcessClients() {
 			// And send the metadata, we are ignoring errors here
 			// TODO: Check if ignoring errors could lead to problems.
 			if meta.Seen {
-				mount.Shout.SendMetadata(meta.Data)
+				if err := mount.Shout.SendMetadata(meta.Data); err != nil {
+					logger.Printf(":metadata failed: %s", err)
+				}
 			} else {
 				go func() {
 					time.Sleep(time.Second)
